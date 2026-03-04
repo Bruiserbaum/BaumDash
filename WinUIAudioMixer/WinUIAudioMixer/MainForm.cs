@@ -31,6 +31,7 @@ public sealed class MainForm : Form
     private Point   _dragStart;
     private bool    _dragging;
     private Button? _btnMax;
+    private Button? _btnSettings, _btnHelp; // overlay buttons — brought to front in OnLoad
 
     private static readonly string _windowStatePath =
         Path.Combine(AppContext.BaseDirectory, "window-state.json");
@@ -146,7 +147,7 @@ public sealed class MainForm : Form
         btnSettings.Location = new Point(8, ClientSize.Height - btnSettings.Height - 8);
         btnSettings.Click   += (_, _) => new SettingsDialog().ShowDialog(this);
         Controls.Add(btnSettings);
-        btnSettings.BringToFront();
+        _btnSettings = btnSettings; // brought to front in OnLoad
 
         var btnHelp = new Button
         {
@@ -164,7 +165,7 @@ public sealed class MainForm : Form
         btnHelp.Location = new Point(44, ClientSize.Height - btnHelp.Height - 8);
         btnHelp.Click   += (_, _) => ShowHelpDialog();
         Controls.Add(btnHelp);
-        btnHelp.BringToFront();
+        _btnHelp = btnHelp; // brought to front in OnLoad
     }
 
     private void CreatePanels()
@@ -211,15 +212,19 @@ public sealed class MainForm : Form
         layout.Controls.Add(_discordPanel, 3, 0);
 
         Controls.Add(layout);
-        // Bring overlay buttons (⚙/?) back to front after layout is added
-        foreach (Control c in Controls)
-            if (c is Button) c.BringToFront();
+        layout.BringToFront(); // must be front for correct Dock=Fill layout under Dock=Top titleBar
     }
 
     private async void OnLoad(object? sender, EventArgs e)
     {
         // Apply dark title bar via DWM
         ApplyDarkMode();
+
+        // Bring overlay buttons in front of layout without triggering a dock recalculation
+        SuspendLayout();
+        _btnSettings?.BringToFront();
+        _btnHelp    ?.BringToFront();
+        ResumeLayout(false);
 
         // Start audio notification listener
         _audioNotifySvc.Start();
