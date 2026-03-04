@@ -1,0 +1,5 @@
+{
+  "url": "http://localhost:3001",
+  "apiKey": "YOUR_API_KEY",
+  "workspace": "your-workspace-slug"
+}

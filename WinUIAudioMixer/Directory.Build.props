@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <WindowsAppSDKVersion>1.5.240227000</WindowsAppSDKVersion>
+  </PropertyGroup>
+</Project>
