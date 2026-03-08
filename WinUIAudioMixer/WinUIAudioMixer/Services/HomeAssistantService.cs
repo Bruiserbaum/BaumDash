@@ -76,6 +76,23 @@ public sealed class HomeAssistantService : IDisposable
     public Task TurnOffLightAsync(string entityId) =>
         CallServiceAsync("light", "turn_off", entityId);
 
+    /// <summary>Returns true when the switch entity state is "on".</summary>
+    public async Task<bool> GetSwitchStateAsync(string entityId)
+    {
+        try
+        {
+            var resp = await _http.GetAsync($"{_baseUrl}/api/states/{entityId}");
+            if (!resp.IsSuccessStatusCode) return false;
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(json);
+            return doc.RootElement.GetProperty("state").GetString() == "on";
+        }
+        catch { return false; }
+    }
+
+    public Task ToggleSwitchAsync(string entityId) =>
+        CallServiceAsync("switch", "toggle", entityId);
+
     private async Task CallServiceAsync(string domain, string service, string entityId)
     {
         try

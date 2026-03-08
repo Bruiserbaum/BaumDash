@@ -1,5 +1,5 @@
 #define AppName      "BaumDash"
-#define AppVersion   "1.0.0"
+#define AppVersion   "2.1.1"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -61,19 +61,20 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Files]
-; Main application files
-Source: "{#PublishDir}\{#AppExeName}";          DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\WinUIAudioMixer.dll";    DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\WinUIAudioMixer.deps.json";      DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\WinUIAudioMixer.runtimeconfig.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\Microsoft.Windows.SDK.NET.dll";  DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\WinRT.Runtime.dll";              DestDir: "{app}"; Flags: ignoreversion
+; Main application files (single-file publish)
+Source: "{#PublishDir}\{#AppExeName}";              DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\D3DCompiler_47_cor3.dll";    DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\PenImc_cor3.dll";            DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\PresentationNative_cor3.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\vcruntime140_cor3.dll";      DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\wpfgfx_cor3.dll";            DestDir: "{app}"; Flags: ignoreversion
 
 ; Config files — never overwrite if user already configured them
 Source: "{#PublishDir}\discord-client-id.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\ha-config.json";            DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\anythingllm-config.json";  DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\chatgpt-config.json";       DestDir: "{app}"; Flags: onlyifdoesntexist
+Source: "{#PublishDir}\general-config.json";      DestDir: "{app}"; Flags: onlyifdoesntexist
 
 [Icons]
 Name: "{group}\{#AppName}";                   Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"

@@ -31,8 +31,9 @@ public sealed class AudioDevicePanel : UserControl
 
     // Home Assistant
     private readonly HomeAssistantService?              _haSvc;
-    private readonly List<Label>                        _haSensorLabels  = new();
-    private readonly List<(Button btn, string entityId)> _haLightButtons = new();
+    private readonly List<Label>                          _haSensorLabels   = new();
+    private readonly List<(Button btn, string entityId)>  _haLightButtons   = new();
+    private readonly List<(Button btn, string entityId)>  _haSwitchButtons  = new();
     private readonly System.Windows.Forms.Timer?        _haTimer;
     private bool _haConnected;
 
@@ -102,6 +103,24 @@ public sealed class AudioDevicePanel : UserControl
                 Controls.Add(btn);
             }
 
+            foreach (var sw in _haSvc.Config.Switches)
+            {
+                var btn = MakeFlatButton($"🔌  {sw.Name.ToUpper()}", AppTheme.BgCard);
+                var eid = sw.Id;
+                btn.Click += async (_, _) =>
+                {
+                    try
+                    {
+                        await _haSvc.ToggleSwitchAsync(eid);
+                        await Task.Delay(400);
+                        await RefreshSwitchButtonAsync(btn, eid);
+                    }
+                    catch { }
+                };
+                _haSwitchButtons.Add((btn, eid));
+                Controls.Add(btn);
+            }
+
             _haTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
             _haTimer.Tick += OnHaTick;
         }
@@ -159,6 +178,10 @@ public sealed class AudioDevicePanel : UserControl
         int lightTop = HaTop + _haSensorLabels.Count * 26 + (_haSensorLabels.Count > 0 ? 8 : 0);
         for (int i = 0; i < _haLightButtons.Count; i++)
             _haLightButtons[i].btn.SetBounds(x, lightTop + i * 44, w, 36);
+
+        int switchTop = lightTop + _haLightButtons.Count * 44 + (_haLightButtons.Count > 0 ? 8 : 0);
+        for (int i = 0; i < _haSwitchButtons.Count; i++)
+            _haSwitchButtons[i].btn.SetBounds(x, switchTop + i * 44, w, 36);
     }
 
     // ── Painting ──────────────────────────────────────────────────────────────
@@ -394,6 +417,13 @@ public sealed class AudioDevicePanel : UserControl
             anySuccess = true;
         }
 
+        for (int i = 0; i < _haSwitchButtons.Count; i++)
+        {
+            var (btn, eid) = _haSwitchButtons[i];
+            await RefreshSwitchButtonAsync(btn, eid);
+            anySuccess = true;
+        }
+
         if (_haConnected != anySuccess)
         {
             _haConnected = anySuccess;
@@ -406,6 +436,15 @@ public sealed class AudioDevicePanel : UserControl
     {
         if (_haSvc == null) return;
         var isOn = await _haSvc.GetLightStateAsync(entityId);
+        var color = isOn ? AppTheme.Accent : AppTheme.BgCard;
+        if (btn.InvokeRequired) btn.BeginInvoke(() => btn.BackColor = color);
+        else                    btn.BackColor = color;
+    }
+
+    private async Task RefreshSwitchButtonAsync(Button btn, string entityId)
+    {
+        if (_haSvc == null) return;
+        var isOn = await _haSvc.GetSwitchStateAsync(entityId);
         var color = isOn ? AppTheme.Accent : AppTheme.BgCard;
         if (btn.InvokeRequired) btn.BeginInvoke(() => btn.BackColor = color);
         else                    btn.BackColor = color;

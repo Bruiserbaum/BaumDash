@@ -39,6 +39,10 @@ public sealed class DiscordService : IDisposable
     private readonly ConcurrentDictionary<string, string> _channelGuildCache = new(); // channelId → guildId
     private readonly ConcurrentDictionary<string, string> _guildNames        = new(); // guildId → name
 
+    // Recent message history (last 10) — shown in chat box on connect
+    private readonly List<DiscordMessage> _messageHistory = new();
+    private readonly object _historyLock = new();
+
     // Serialises pipe writes so concurrent Task.Run callers don't interleave frames
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
@@ -60,6 +64,11 @@ public sealed class DiscordService : IDisposable
     public bool    IsStreaming       => _selfStreaming;
     public string? CurrentGuildName  { get; private set; }
     public List<DiscordMember> VoiceMembers { get; private set; } = new();
+
+    public IReadOnlyList<DiscordMessage> RecentMessages
+    {
+        get { lock (_historyLock) return _messageHistory.ToList(); }
+    }
 
     public bool IsConfigured =>
         !string.IsNullOrWhiteSpace(_clientId) &&
@@ -161,6 +170,10 @@ public sealed class DiscordService : IDisposable
 
                 case "SPEAKING_STOP":
                     SetSpeaking(data?["user_id"]?.GetValue<string>(), false);
+                    break;
+
+                case "MESSAGE_CREATE":
+                    _ = Task.Run(() => HandleMessageCreateAsync(data));
                     break;
 
                 case "NOTIFICATION_CREATE":
@@ -432,6 +445,24 @@ public sealed class DiscordService : IDisposable
         VoiceStateChanged?.Invoke(VoiceMembers);
     }
 
+    // ── Chat messages ─────────────────────────────────────────────────────────
+
+    private Task HandleMessageCreateAsync(JsonNode? data)
+    {
+        if (data == null) return Task.CompletedTask;
+        var channelId = data["channel_id"]?.GetValue<string>() ?? "";
+        var msgNode   = data["message"];
+        var author    = msgNode?["author"]?["username"]?.GetValue<string>() ?? "Unknown";
+        var content   = msgNode?["content"]?.GetValue<string>() ?? "";
+        if (string.IsNullOrWhiteSpace(content)) return Task.CompletedTask;
+
+        _channelGuildCache.TryGetValue(channelId, out var guildId);
+        var msg = new DiscordMessage(author, content, channelId, guildId ?? "");
+        AddToHistory(msg);
+        MessageReceived?.Invoke(msg);
+        return Task.CompletedTask;
+    }
+
     // ── Notification (chat) ───────────────────────────────────────────────────
 
     private async Task HandleNotificationAsync(JsonNode? data)
@@ -457,7 +488,19 @@ public sealed class DiscordService : IDisposable
             catch { guildId = ""; }
         }
 
-        MessageReceived?.Invoke(new DiscordMessage(author, content, channelId, guildId ?? ""));
+        var msg = new DiscordMessage(author, content, channelId, guildId ?? "");
+        AddToHistory(msg);
+        MessageReceived?.Invoke(msg);
+    }
+
+    private void AddToHistory(DiscordMessage msg)
+    {
+        lock (_historyLock)
+        {
+            _messageHistory.Add(msg);
+            if (_messageHistory.Count > 10)
+                _messageHistory.RemoveAt(0);
+        }
     }
 
     // ── Voice channel ─────────────────────────────────────────────────────────
@@ -476,10 +519,41 @@ public sealed class DiscordService : IDisposable
                 _channelGuildCache[_currentChannelId] = guildId;
 
             await SubscribeChannelEventsAsync(_currentChannelId);
-            await RefreshChannelMembersAsync();
+
+            // GET_SELECTED_VOICE_CHANNEL already includes voice_states — use them directly
+            // to avoid a separate GET_CHANNEL call that may fail without rpc.voice.read scope.
+            var states = data?["voice_states"]?.AsArray();
+            if (states != null && states.Count > 0)
+                ParseVoiceStatesArray(states);
+            else
+                await RefreshChannelMembersAsync(); // fallback for older Discord versions
+
             await ResolveGuildNameAsync(_currentChannelId);
         }
         catch { }
+    }
+
+    private void ParseVoiceStatesArray(JsonArray states)
+    {
+        var members = new List<DiscordMember>();
+        foreach (var s in states)
+        {
+            var m = ParseVoiceStateMember(s);
+            if (m != null) members.Add(m);
+        }
+        VoiceMembers = members;
+        TrackSelfStreaming();
+
+        var self = _currentUserId != null
+            ? members.FirstOrDefault(m => m.UserId == _currentUserId)
+            : null;
+        if (self != null)
+        {
+            _micMuted = self.IsMuted;
+            MicMuteChanged?.Invoke(_micMuted);
+        }
+
+        VoiceStateChanged?.Invoke(VoiceMembers);
     }
 
     private async Task HandleVoiceChannelSelectAsync(JsonNode? data)
@@ -505,7 +579,14 @@ public sealed class DiscordService : IDisposable
             await SubscribeChannelEventsAsync(channelId);
         }
 
-        await RefreshChannelMembersAsync();
+        // Reuse GET_SELECTED_VOICE_CHANNEL data for the member list if it's still for this channel
+        var selData = await SendCommandAsync("GET_SELECTED_VOICE_CHANNEL", new JsonObject());
+        var selStates = selData?["voice_states"]?.AsArray();
+        if (selStates != null && selData?["id"]?.GetValue<string>() == channelId)
+            ParseVoiceStatesArray(selStates);
+        else
+            await RefreshChannelMembersAsync();
+
         await ResolveGuildNameAsync(channelId);
     }
 
@@ -580,7 +661,8 @@ public sealed class DiscordService : IDisposable
     {
         var args = new JsonObject { ["channel_id"] = channelId };
         foreach (var evt in new[] { "VOICE_STATE_CREATE", "VOICE_STATE_UPDATE",
-                                    "VOICE_STATE_DELETE", "SPEAKING_START", "SPEAKING_STOP" })
+                                    "VOICE_STATE_DELETE", "SPEAKING_START", "SPEAKING_STOP",
+                                    "MESSAGE_CREATE" })
             await TrySubscribeAsync(evt, args);
     }
 
@@ -611,6 +693,23 @@ public sealed class DiscordService : IDisposable
     }
 
     public Task ToggleMicMuteAsync() => SetMicMuteAsync(!_micMuted);
+
+    /// <summary>Re-queries the current voice channel members and mic/stream state.</summary>
+    public async Task RefreshVoiceAsync()
+    {
+        if (State != DiscordConnectionState.Connected) return;
+        try
+        {
+            await GetCurrentVoiceChannelAsync();
+            var vs = await SendCommandAsync("GET_VOICE_SETTINGS", new JsonObject());
+            if (vs != null)
+            {
+                _micMuted = vs["mute"]?.GetValue<bool>() ?? _micMuted;
+                MicMuteChanged?.Invoke(_micMuted);
+            }
+        }
+        catch { }
+    }
 
     // ── Poll loop (catches join/leave when events are missed) ─────────────────
 

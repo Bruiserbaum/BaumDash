@@ -56,6 +56,13 @@ public sealed class AppVolumePanel : UserControl
             int y = 0;
             foreach (var session in sessions)
             {
+                var name = session.DisplayName ?? "";
+                if (name.StartsWith("ArmoryCrate", StringComparison.OrdinalIgnoreCase) ||
+                    name.StartsWith("AMDRSServ", StringComparison.OrdinalIgnoreCase))
+                {
+                    session.Dispose();
+                    continue;
+                }
                 var row = new AppSessionRow(session)
                 {
                     Left  = 0,

@@ -17,8 +17,9 @@ public sealed class MainForm : Form
     private readonly AudioNotificationService _audioNotifySvc;
     private readonly DiscordService           _discordSvc;
     private readonly HomeAssistantService?    _haSvc;
-    private readonly AnythingLLMService?     _aiSvc;
-    private readonly ChatGptService?         _chatGptSvc;
+    private readonly AnythingLLMService?      _aiSvc;
+    private readonly ChatGptService?          _chatGptSvc;
+    private readonly GoogleCalendarService?   _calSvc;
     private MediaSessionService?              _mediaSvc;
 
     // Panels
@@ -32,6 +33,12 @@ public sealed class MainForm : Form
     private bool    _dragging;
     private Button? _btnMax;
     private Button? _btnSettings, _btnHelp; // overlay buttons — brought to front in OnLoad
+    private NotifyIcon? _trayIcon;
+    private bool _exitRequested;
+    private bool _closeToTray = true;
+
+    /// <summary>Set by SettingsDialog.OnImport — Program.cs restarts to tray after Application.Run returns.</summary>
+    internal static bool PendingImportRestart;
 
     private static readonly string _windowStatePath =
         Path.Combine(AppContext.BaseDirectory, "window-state.json");
@@ -59,12 +66,30 @@ public sealed class MainForm : Form
         var gptConfig = ChatGptService.LoadConfig();
         _chatGptSvc = gptConfig != null ? new ChatGptService(gptConfig) : null;
 
+        // Google Calendar: gcalendar-config.json next to the exe (optional)
+        var calConfig = GoogleCalendarService.LoadConfig();
+        _calSvc = calConfig != null ? new GoogleCalendarService(calConfig) : null;
+
+        // General settings
+        try
+        {
+            var genPath = Path.Combine(AppContext.BaseDirectory, "general-config.json");
+            if (File.Exists(genPath))
+            {
+                var cfg = System.Text.Json.JsonSerializer.Deserialize<Models.GeneralConfig>(
+                    File.ReadAllText(genPath),
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (cfg != null) _closeToTray = cfg.CloseToTray;
+            }
+        }
+        catch { }
+
         InitForm();
         CreatePanels();
 
         // Wire DWM dark title bar + save window state on close
         Load        += OnLoad;
-        FormClosing += (_, _) => SaveWindowState();
+        FormClosing += OnFormClosing;
     }
 
     // ── Initialisation ────────────────────────────────────────────────────────
@@ -109,10 +134,18 @@ public sealed class MainForm : Form
 
         // Close / Maximise / Minimise buttons (far right)
         var btnClose = MakeTitleBarButton("✕", AppTheme.Danger);
-        btnClose.Click += (_, _) => Close();
+        btnClose.Click += (_, _) =>
+        {
+            if (_closeToTray) HideToTray();
+            else { _exitRequested = true; Close(); }
+        };
 
         var btnMin = MakeTitleBarButton("─", AppTheme.TextMuted);
-        btnMin.Click += (_, _) => WindowState = FormWindowState.Minimized;
+        btnMin.Click += (_, _) =>
+        {
+            if (_closeToTray) HideToTray();
+            else WindowState = FormWindowState.Minimized;
+        };
 
         _btnMax = MakeTitleBarButton("⬜", AppTheme.TextMuted);
         _btnMax.Click += (_, _) => ToggleMaximize();
@@ -166,6 +199,54 @@ public sealed class MainForm : Form
         btnHelp.Click   += (_, _) => ShowHelpDialog();
         Controls.Add(btnHelp);
         _btnHelp = btnHelp; // brought to front in OnLoad
+
+        InitTrayIcon();
+    }
+
+    private void InitTrayIcon()
+    {
+        // Build a simple 16x16 icon programmatically (dark bg, white "B")
+        var bmp = new Bitmap(16, 16);
+        using (var g = Graphics.FromImage(bmp))
+        {
+            g.Clear(AppTheme.BgDeep);
+            using var br = new SolidBrush(AppTheme.Accent);
+            g.FillRectangle(br, 0, 0, 16, 16);
+            using var f  = new Font("Segoe UI", 8f, FontStyle.Bold);
+            using var tb = new SolidBrush(Color.White);
+            var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+            g.DrawString("B", f, tb, new RectangleF(0, 0, 16, 16), fmt);
+        }
+        var icon = Icon.FromHandle(bmp.GetHicon());
+
+        var menu = new ContextMenuStrip();
+        menu.Items.Add("Show", null, (_, _) => RestoreFromTray());
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add("Exit", null, (_, _) => { _exitRequested = true; Application.Exit(); });
+
+        _trayIcon = new NotifyIcon
+        {
+            Icon    = icon,
+            Text    = "BaumDash",
+            Visible = false,
+            ContextMenuStrip = menu,
+        };
+        _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+    }
+
+    private void HideToTray()
+    {
+        SaveWindowState();
+        Hide();
+        if (_trayIcon != null) _trayIcon.Visible = true;
+    }
+
+    private void RestoreFromTray()
+    {
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+        if (_trayIcon != null) _trayIcon.Visible = false;
     }
 
     private void CreatePanels()
@@ -189,7 +270,7 @@ public sealed class MainForm : Form
         _devicePanel  = new AudioDevicePanel(_audioDeviceSvc, _haSvc) { Dock = DockStyle.Fill };
         _volumePanel  = new AppVolumePanel(_audioSessionSvc)    { Dock = DockStyle.Fill };
         _mediaPanel   = new MediaPanel()                        { Dock = DockStyle.Fill };
-        _discordPanel = new DiscordPanel(_discordSvc, _aiSvc, _chatGptSvc) { Dock = DockStyle.Fill };
+        _discordPanel = new DiscordPanel(_discordSvc, _aiSvc, _chatGptSvc, _calSvc) { Dock = DockStyle.Fill };
 
         // Media control event wiring
         _mediaPanel.PlayPauseRequested += async () => { if (_mediaSvc != null) await _mediaSvc.TogglePlayPauseAsync(); };
@@ -217,6 +298,16 @@ public sealed class MainForm : Form
 
     private async void OnLoad(object? sender, EventArgs e)
     {
+        // Register auto-start by default if not already set
+        EnsureAutoStart();
+
+        // If launched with --tray (e.g. after settings import), go straight to tray
+        if (Environment.GetCommandLineArgs().Contains("--tray"))
+        {
+            HideToTray();
+            return;
+        }
+
         // Apply dark title bar via DWM
         ApplyDarkMode();
 
@@ -293,6 +384,21 @@ public sealed class MainForm : Form
         Bounds = fallback;
     }
 
+    private void OnFormClosing(object? sender, FormClosingEventArgs e)
+    {
+        SaveWindowState();
+        // Allow exit when explicitly requested (tray Exit item) or triggered by Application.Exit() (import restart)
+        if (!_exitRequested && e.CloseReason != CloseReason.ApplicationExitCall)
+        {
+            e.Cancel = true;
+            HideToTray();
+        }
+        else
+        {
+            _trayIcon?.Dispose();
+        }
+    }
+
     private void SaveWindowState()
     {
         try
@@ -344,6 +450,18 @@ public sealed class MainForm : Form
         return "YOUR_DISCORD_CLIENT_ID"; // replace or create discord-client-id.txt
     }
 
+    private static void EnsureAutoStart()
+    {
+        const string runKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKey, writable: true)!;
+            if (key.GetValue("BaumDash") == null)
+                key.SetValue("BaumDash", $"\"{Application.ExecutablePath}\"");
+        }
+        catch { }
+    }
+
     private void ApplyDarkMode()
     {
         try
@@ -389,53 +507,97 @@ public sealed class MainForm : Form
         };
 
         txt.Text =
+            "BAUMDASH SETUP GUIDE\r\n" +
+            "═════════════════════════════════════════════════\r\n" +
+            "All settings are configured through the ⚙ Settings button\r\n" +
+            "in the top-right corner of the app. Click Save after each change,\r\n" +
+            "then restart BaumDash to apply.\r\n" +
+            "\r\n" +
+            "GENERAL SETTINGS\r\n" +
+            "─────────────────────────────────────────────────\r\n" +
+            "• Launch on startup — adds BaumDash to Windows startup.\r\n" +
+            "• Close / minimize to tray — when enabled, the ✕ and ─ buttons\r\n" +
+            "  hide BaumDash to the system tray instead of exiting.\r\n" +
+            "  Right-click the tray icon to exit completely.\r\n" +
+            "\r\n" +
             "DISCORD SETUP\r\n" +
             "─────────────────────────────────────────────────\r\n" +
-            "1. Go to discord.com/developers and create an application.\r\n" +
-            "2. Copy the Application (Client) ID.\r\n" +
-            "3. Open discord-client-id.txt in the install folder.\r\n" +
-            "4. Paste your Client ID and save the file.\r\n" +
-            "5. Restart BaumDash.\r\n" +
+            "1. Go to discord.com/developers → New Application.\r\n" +
+            "2. In Settings → General, copy the Application (Client) ID.\r\n" +
+            "3. In Settings → OAuth2, copy the Client Secret.\r\n" +
+            "4. Open BaumDash → ⚙ Settings → DISCORD tab.\r\n" +
+            "5. Paste both values, click Save.\r\n" +
+            "6. Restart BaumDash. On first connect, Discord will show an\r\n" +
+            "   authorization popup — click Authorize.\r\n" +
+            "   A token is saved so future launches skip the popup.\r\n" +
+            "\r\n" +
+            "DISCORD — VOICE MEMBERS / TROUBLESHOOTING\r\n" +
+            "─────────────────────────────────────────────────\r\n" +
+            "• Voice members, mute state, and streaming state update\r\n" +
+            "  automatically when you join/leave a voice channel.\r\n" +
+            "• Use the ↻ Refresh button on the Discord tab to force a\r\n" +
+            "  manual re-query of voice members and mic state.\r\n" +
+            "• If voice members show 0 or state is wrong, open\r\n" +
+            "  Settings → DISCORD → click Reauthorize Discord, then\r\n" +
+            "  reconnect and click Authorize in the Discord popup.\r\n" +
+            "• The MESSAGES box shows incoming notifications (DMs,\r\n" +
+            "  mentions) and voice-channel text chat in real time.\r\n" +
+            "  History is kept for the current session only.\r\n" +
             "\r\n" +
             "HOME ASSISTANT SETUP\r\n" +
             "─────────────────────────────────────────────────\r\n" +
-            "1. Open ha-config.json in the install folder.\r\n" +
-            "2. Set \"url\" to your Nabu Casa or local HA address.\r\n" +
+            "1. Open Settings → HOME ASSISTANT tab.\r\n" +
+            "2. SERVER URL — your Nabu Casa or local address:\r\n" +
             "   e.g. https://xxxxx.ui.nabu.casa\r\n" +
-            "3. Set \"token\" to a Long-Lived Access Token:\r\n" +
+            "3. LONG-LIVED ACCESS TOKEN:\r\n" +
             "   HA → Profile → Long-Lived Access Tokens → Create Token\r\n" +
-            "4. Add lights:  { \"id\": \"light.living_room\", \"name\": \"Room\" }\r\n" +
-            "5. Add sensors: { \"id\": \"sensor.room_temperature\", \"name\": \"Temp\" }\r\n" +
-            "6. Save the file and restart BaumDash.\r\n" +
+            "4. LIGHTS — one per line: entity_id = Display Name\r\n" +
+            "   e.g.  light.living_room = Living Room\r\n" +
+            "5. SWITCHES — one per line: entity_id = Display Name\r\n" +
+            "   e.g.  switch.desk_power = Desk Power\r\n" +
+            "6. SENSORS — one per line: entity_id = Display Name\r\n" +
+            "   e.g.  sensor.room_temperature = Room Temp\r\n" +
+            "7. Click Save and restart BaumDash.\r\n" +
+            "   Light and switch buttons appear in the left panel.\r\n" +
+            "   Sensor readings refresh every 30 seconds.\r\n" +
             "\r\n" +
             "ANYTHINGLLM SETUP\r\n" +
             "─────────────────────────────────────────────────\r\n" +
-            "AnythingLLM is a local AI assistant. Install it from anythingllm.com.\r\n" +
-            "\r\n" +
-            "1. Open anythingllm-config.json in the install folder.\r\n" +
-            "2. Set \"url\":\r\n" +
-            "   • Local install:  http://localhost:3001\r\n" +
-            "   • Docker/remote:  http://<host>:<port>\r\n" +
-            "3. Set \"apiKey\":\r\n" +
-            "   AnythingLLM → ⚙ Settings → Security → API Keys → Generate\r\n" +
-            "4. Set \"workspace\":\r\n" +
-            "   Open a workspace in AnythingLLM — the slug is in the URL:\r\n" +
-            "   e.g. http://localhost:3001/workspace/general → slug is \"general\"\r\n" +
-            "5. Save the file and restart BaumDash.\r\n" +
-            "6. Click the AI CHAT tab in the right panel to start chatting.\r\n" +
+            "1. Install AnythingLLM from anythingllm.com.\r\n" +
+            "2. Open Settings → ANYTHING LLM tab.\r\n" +
+            "3. SERVER URL:\r\n" +
+            "   • Local:   http://localhost:3001\r\n" +
+            "   • Remote:  http://<host>:<port>\r\n" +
+            "4. API KEY: AnythingLLM → ⚙ Settings → Security → API Keys\r\n" +
+            "5. WORKSPACE SLUG: from the URL of your workspace\r\n" +
+            "   e.g. localhost:3001/workspace/general → \"general\"\r\n" +
+            "6. Click Save, restart, then use the AI CHAT tab.\r\n" +
             "\r\n" +
             "CHATGPT SETUP\r\n" +
             "─────────────────────────────────────────────────\r\n" +
-            "1. Go to platform.openai.com and create an account.\r\n" +
-            "2. Navigate to API Keys and create a new secret key.\r\n" +
-            "3. Open chatgpt-config.json in the install folder.\r\n" +
-            "4. Set \"apiKey\" to your OpenAI API key.\r\n" +
-            "5. Set \"model\" to your preferred model:\r\n" +
-            "   • gpt-4o          — most capable\r\n" +
-            "   • gpt-4o-mini     — faster, cheaper\r\n" +
-            "   • gpt-3.5-turbo   — budget option\r\n" +
-            "6. Save the file and restart BaumDash.\r\n" +
-            "7. Click the CHATGPT tab in the right panel to start chatting.\r\n" +
+            "1. Get an API key from platform.openai.com → API Keys.\r\n" +
+            "2. Open Settings → CHATGPT tab.\r\n" +
+            "3. Paste your API key and choose a model:\r\n" +
+            "   • gpt-4o        — most capable\r\n" +
+            "   • gpt-4o-mini   — faster, cheaper\r\n" +
+            "   • gpt-3.5-turbo — budget option\r\n" +
+            "4. Click Save, restart, then use the CHATGPT tab.\r\n" +
+            "\r\n" +
+            "GOOGLE CALENDAR SETUP\r\n" +
+            "─────────────────────────────────────────────────\r\n" +
+            "1. Open Settings → CALENDAR tab.\r\n" +
+            "2. Click '+ Add Calendar' for each calendar.\r\n" +
+            "3. In Google Calendar: ⋮ → Settings → Integrate calendar\r\n" +
+            "   → copy the 'Secret address in iCal format' URL.\r\n" +
+            "4. Paste the URL and give the calendar a name.\r\n" +
+            "5. Click Save, restart, then use the CALENDAR tab.\r\n" +
+            "\r\n" +
+            "BACKUP & RESTORE\r\n" +
+            "─────────────────────────────────────────────────\r\n" +
+            "Use Export… / Import… buttons at the bottom of Settings\r\n" +
+            "to back up or restore all config files at once.\r\n" +
+            "The backup is a .baumdash-backup file (JSON archive).\r\n" +
+            "Importing restarts BaumDash automatically.\r\n" +
             "\r\n" +
             "INSTALL LOCATION\r\n" +
             "─────────────────────────────────────────────────\r\n" +

@@ -17,7 +17,7 @@ public sealed class DiscordPanel : UserControl
     // State
     private DiscordConnectionState _connState  = DiscordConnectionState.Disconnected;
     private List<DiscordMember>    _members    = new();
-    private enum                   ActiveTab   { Discord, Ai, ChatGpt, Pc }
+    private enum                   ActiveTab   { Discord, Ai, ChatGpt, Pc, Calendar, Apps }
     private ActiveTab              _activeTab  = ActiveTab.Discord;
     private bool                   _aiWelcomed = false;
 
@@ -26,9 +26,12 @@ public sealed class DiscordPanel : UserControl
     private readonly Button _tabAi;
     private readonly Button _tabChatGpt;
     private readonly Button _tabPc;
+    private readonly Button _tabCalendar;
+    private readonly Button _tabApps;
 
     // Discord controls
     private readonly Button      _connectButton;
+    private readonly Button      _refreshButton;
     private readonly Button      _micButton;
     private readonly Button      _streamButton;
     private readonly Panel       _memberListPanel;
@@ -39,6 +42,7 @@ public sealed class DiscordPanel : UserControl
     private readonly Panel       _aiPanel;
     private readonly RichTextBox _aiHistory;
     private readonly TextBox     _aiInput;
+    private readonly Button      _aiMic;
     private readonly Button      _aiSend;
 
     // ChatGPT controls (inside _chatGptPanel)
@@ -46,8 +50,10 @@ public sealed class DiscordPanel : UserControl
     private readonly Panel           _chatGptPanel;
     private readonly RichTextBox     _chatGptHistory;
     private readonly TextBox         _chatGptInput;
+    private readonly Button          _chatGptMic;
     private readonly Button          _chatGptSend;
     private bool                     _chatGptWelcomed;
+    private bool                     _isListening;
 
     // PC performance controls
     private readonly Panel                _pcPanel;
@@ -56,6 +62,13 @@ public sealed class DiscordPanel : UserControl
     private readonly List<PerfMeter>      _pcMeters = new();
     private Label?                        _pcInfoLabel;
 
+    // Google Calendar panel
+    private readonly GoogleCalendarPanel _calendarPanel;
+    private bool                         _calendarLoaded;
+
+    // App shortcuts panel
+    private readonly AppShortcutsPanel _appsPanel;
+
     // Layout constants
     private const int TabBarH     = 40;
     private const int VoiceListY  = 108 + TabBarH;             // 148
@@ -63,7 +76,7 @@ public sealed class DiscordPanel : UserControl
     private const int ChatHeaderY = VoiceListY + VoiceListH + 8; // 356
     private const int ChatY       = ChatHeaderY + 24;            // 380
 
-    public DiscordPanel(DiscordService discord, AnythingLLMService? aiSvc = null, ChatGptService? chatGptSvc = null)
+    public DiscordPanel(DiscordService discord, AnythingLLMService? aiSvc = null, ChatGptService? chatGptSvc = null, GoogleCalendarService? calSvc = null)
     {
         _discord     = discord;
         _aiSvc       = aiSvc;
@@ -87,6 +100,12 @@ public sealed class DiscordPanel : UserControl
         _tabPc = MakeTabButton("PC PERF", active: false);
         _tabPc.Click += (_, _) => SwitchTab(ActiveTab.Pc);
 
+        _tabCalendar = MakeTabButton("CALENDAR", active: false);
+        _tabCalendar.Click += (_, _) => SwitchTab(ActiveTab.Calendar);
+
+        _tabApps = MakeTabButton("APPS", active: false);
+        _tabApps.Click += (_, _) => SwitchTab(ActiveTab.Apps);
+
         // ── Discord controls ──────────────────────────────────────────────────
         bool configured = discord.IsConfigured;
         _statusLabel = new Label
@@ -102,6 +121,21 @@ public sealed class DiscordPanel : UserControl
         _connectButton = MakeFlatButton("Connect to Discord", AppTheme.Accent, 220, 34);
         _connectButton.Enabled = configured;
         _connectButton.Click  += OnConnectClick;
+
+        _refreshButton = MakeFlatButton("↻  Refresh", AppTheme.BgCard, 120, 34);
+        _refreshButton.Visible = false;
+        _refreshButton.Click  += async (_, _) =>
+        {
+            _refreshButton.Enabled = false;
+            _refreshButton.Text    = "Refreshing…";
+            try { await _discord.RefreshVoiceAsync(); }
+            catch { }
+            finally
+            {
+                _refreshButton.Enabled = true;
+                _refreshButton.Text    = "↻  Refresh";
+            }
+        };
 
         _micButton = MakeFlatButton("🎙  DISCORD MUTE", AppTheme.Success, 170, 40);
         _micButton.Click += OnMicClick;
@@ -155,10 +189,13 @@ public sealed class DiscordPanel : UserControl
             }
         };
 
+        _aiMic = MakeFlatButton("MIC", AppTheme.BgCard, 42, 38);
+        _aiMic.Click += async (_, _) => await OnMicClickAsync(_aiInput, _aiMic);
+
         _aiSend = MakeFlatButton("Send", AppTheme.Accent, 72, 38);
         _aiSend.Click += async (_, _) => await OnAiSendAsync();
 
-        _aiPanel.Controls.AddRange(new Control[] { _aiHistory, _aiInput, _aiSend });
+        _aiPanel.Controls.AddRange(new Control[] { _aiHistory, _aiInput, _aiMic, _aiSend });
 
         // ── ChatGPT panel ─────────────────────────────────────────────────────
         _chatGptPanel = new Panel { BackColor = Color.Transparent, Visible = false };
@@ -192,20 +229,30 @@ public sealed class DiscordPanel : UserControl
             }
         };
 
+        _chatGptMic = MakeFlatButton("MIC", AppTheme.BgCard, 42, 38);
+        _chatGptMic.Click += async (_, _) => await OnMicClickAsync(_chatGptInput, _chatGptMic);
+
         _chatGptSend = MakeFlatButton("Send", AppTheme.Accent, 72, 38);
         _chatGptSend.Click += async (_, _) => await OnChatGptSendAsync();
 
-        _chatGptPanel.Controls.AddRange(new Control[] { _chatGptHistory, _chatGptInput, _chatGptSend });
+        _chatGptPanel.Controls.AddRange(new Control[] { _chatGptHistory, _chatGptInput, _chatGptMic, _chatGptSend });
 
         // PC performance panel
         _pcPanel = new Panel { BackColor = Color.Transparent, Visible = false };
 
+        // Google Calendar panel
+        _calendarPanel = new GoogleCalendarPanel(calSvc) { Visible = false };
+
+        // App shortcuts panel
+        _appsPanel = new AppShortcutsPanel { Visible = false };
+
         // ── Add everything ────────────────────────────────────────────────────
         Controls.AddRange(new Control[]
         {
-            _statusLabel, _connectButton, _micButton, _streamButton,
+            _statusLabel, _connectButton, _refreshButton, _micButton, _streamButton,
             _memberListPanel, _chatBox,
-            _tabDiscord, _tabAi, _tabChatGpt, _tabPc, _aiPanel, _chatGptPanel, _pcPanel,
+            _tabDiscord, _tabAi, _tabChatGpt, _tabPc, _tabCalendar, _tabApps,
+            _aiPanel, _chatGptPanel, _pcPanel, _calendarPanel, _appsPanel,
         });
 
         if (configured)
@@ -236,10 +283,13 @@ public sealed class DiscordPanel : UserControl
         _tabAi      .SetBounds(x + 78,  7, 68, 26);
         _tabChatGpt .SetBounds(x + 152, 7, 72, 26);
         _tabPc      .SetBounds(x + 230, 7, 72, 26);
+        _tabCalendar.SetBounds(x + 308, 7, 80, 26);
+        _tabApps    .SetBounds(x + 394, 7, 52, 26);
 
         // Discord controls
-        _statusLabel    .SetBounds(x, TabBarH + 6,  cw, 20);
-        _connectButton  .SetBounds(x, TabBarH + 28, 180, 34);
+        _statusLabel   .SetBounds(x, TabBarH + 6,  cw, 20);
+        _connectButton .SetBounds(x, TabBarH + 28, 180, 34);
+        _refreshButton .SetBounds(x, TabBarH + 28, 120, 34);
         _memberListPanel.SetBounds(x, VoiceListY,  cw, VoiceListH);
 
         int chatH = Math.Max(60, h - 60 - ChatY);
@@ -249,22 +299,26 @@ public sealed class DiscordPanel : UserControl
         _micButton   .SetBounds(x,       by, 170, 40);
         _streamButton.SetBounds(x + 178, by, 190, 40);
 
-        // AI / ChatGPT / PC panels
-        _aiPanel      .SetBounds(0, TabBarH, w, h - TabBarH);
-        _chatGptPanel .SetBounds(0, TabBarH, w, h - TabBarH);
-        _pcPanel      .SetBounds(0, TabBarH, w, h - TabBarH);
+        // AI / ChatGPT / PC / Calendar panels
+        _aiPanel       .SetBounds(0, TabBarH, w, h - TabBarH);
+        _chatGptPanel  .SetBounds(0, TabBarH, w, h - TabBarH);
+        _pcPanel       .SetBounds(0, TabBarH, w, h - TabBarH);
+        _calendarPanel .SetBounds(0, TabBarH, w, h - TabBarH);
+        _appsPanel     .SetBounds(0, TabBarH, w, h - TabBarH);
         LayoutPcPanel();
 
-        const int inputH = 38, sendW = 80, pad = 8;
+        const int inputH = 38, sendW = 80, micW = 42, pad = 8;
         int aiW = Math.Max(1, w);
         int aiH = Math.Max(1, h - TabBarH);
 
         _aiHistory.SetBounds(pad, pad, aiW - pad * 2, aiH - inputH - pad * 3);
-        _aiInput  .SetBounds(pad, aiH - inputH - pad, aiW - sendW - pad * 2 - 4, inputH);
+        _aiInput  .SetBounds(pad, aiH - inputH - pad, aiW - sendW - micW - pad * 2 - 8, inputH);
+        _aiMic    .SetBounds(aiW - sendW - micW - pad - 4, aiH - inputH - pad, micW, inputH);
         _aiSend   .SetBounds(aiW - sendW - pad, aiH - inputH - pad, sendW, inputH);
 
         _chatGptHistory.SetBounds(pad, pad, aiW - pad * 2, aiH - inputH - pad * 3);
-        _chatGptInput  .SetBounds(pad, aiH - inputH - pad, aiW - sendW - pad * 2 - 4, inputH);
+        _chatGptInput  .SetBounds(pad, aiH - inputH - pad, aiW - sendW - micW - pad * 2 - 8, inputH);
+        _chatGptMic    .SetBounds(aiW - sendW - micW - pad - 4, aiH - inputH - pad, micW, inputH);
         _chatGptSend   .SetBounds(aiW - sendW - pad, aiH - inputH - pad, sendW, inputH);
 
         RebuildMemberList();
@@ -275,18 +329,23 @@ public sealed class DiscordPanel : UserControl
     private void SwitchTab(ActiveTab tab)
     {
         _activeTab = tab;
-        bool discord = tab == ActiveTab.Discord;
-        bool ai      = tab == ActiveTab.Ai;
-        bool gpt     = tab == ActiveTab.ChatGpt;
-        bool pc      = tab == ActiveTab.Pc;
+        bool discord  = tab == ActiveTab.Discord;
+        bool ai       = tab == ActiveTab.Ai;
+        bool gpt      = tab == ActiveTab.ChatGpt;
+        bool pc       = tab == ActiveTab.Pc;
+        bool calendar = tab == ActiveTab.Calendar;
+        bool apps     = tab == ActiveTab.Apps;
 
-        _aiPanel      .Visible = ai;
-        _chatGptPanel .Visible = gpt;
-        _pcPanel      .Visible = pc;
+        _aiPanel       .Visible = ai;
+        _chatGptPanel  .Visible = gpt;
+        _pcPanel       .Visible = pc;
+        _calendarPanel .Visible = calendar;
+        _appsPanel     .Visible = apps;
 
         bool connected = _connState == DiscordConnectionState.Connected;
         _statusLabel    .Visible = discord;
         _connectButton  .Visible = discord && !connected;
+        _refreshButton  .Visible = discord && connected;
         _memberListPanel.Visible = discord;
         _chatBox        .Visible = discord;
         _micButton      .Visible = discord && connected;
@@ -298,6 +357,8 @@ public sealed class DiscordPanel : UserControl
             (_tabAi,       ai),
             (_tabChatGpt,  gpt),
             (_tabPc,       pc),
+            (_tabCalendar, calendar),
+            (_tabApps,     apps),
         })
         {
             btn.BackColor = active ? AppTheme.BgCard     : Color.Transparent;
@@ -353,6 +414,12 @@ public sealed class DiscordPanel : UserControl
             _pcTimer?.Stop();
         }
 
+        if (calendar && !_calendarLoaded)
+        {
+            _calendarLoaded = true;
+            _ = _calendarPanel.LoadAsync();
+        }
+
         Invalidate();
     }
 
@@ -375,6 +442,55 @@ public sealed class DiscordPanel : UserControl
         else
         {
             AppendAiMessage("System", "Ready — ask me anything!", AppTheme.Success);
+        }
+    }
+
+    // ── Speech-to-text ────────────────────────────────────────────────────────
+
+    private async Task OnMicClickAsync(TextBox inputBox, Button micBtn)
+    {
+        if (_isListening) return;
+        _isListening     = true;
+        micBtn.Text      = "●REC";
+        micBtn.BackColor = AppTheme.Danger;
+
+        try
+        {
+            var tcs = new TaskCompletionSource<string?>();
+
+            await Task.Run(() =>
+            {
+                try
+                {
+                    using var engine = new System.Speech.Recognition.SpeechRecognitionEngine(
+                        System.Globalization.CultureInfo.CurrentCulture);
+                    engine.LoadGrammar(new System.Speech.Recognition.DictationGrammar());
+                    engine.SetInputToDefaultAudioDevice();
+
+                    engine.SpeechRecognized   += (_, e) => tcs.TrySetResult(e.Result.Text);
+                    engine.RecognizeCompleted += (_, e) => tcs.TrySetResult(e.Result?.Text);
+                    engine.RecognizeAsync(System.Speech.Recognition.RecognizeMode.Single);
+
+                    tcs.Task.Wait(TimeSpan.FromSeconds(15));
+                    engine.RecognizeAsyncCancel();
+                }
+                catch (Exception ex) { tcs.TrySetException(ex); }
+            });
+
+            var text = tcs.Task.IsCompletedSuccessfully ? tcs.Task.Result : null;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                var existing  = inputBox.Text.TrimEnd();
+                inputBox.Text = existing.Length > 0 ? $"{existing} {text}" : text;
+                inputBox.SelectionStart = inputBox.Text.Length;
+            }
+        }
+        catch { /* microphone unavailable or not configured in Windows speech settings */ }
+        finally
+        {
+            _isListening     = false;
+            micBtn.Text      = "MIC";
+            micBtn.BackColor = AppTheme.BgCard;
         }
     }
 
@@ -483,11 +599,46 @@ public sealed class DiscordPanel : UserControl
         UpdateStatusLabel();
         if (_activeTab == ActiveTab.Discord)
         {
-            _connectButton.Visible = state != DiscordConnectionState.Connected;
-            _micButton    .Visible = state == DiscordConnectionState.Connected;
-            _streamButton .Visible = state == DiscordConnectionState.Connected;
+            bool con = state == DiscordConnectionState.Connected;
+            _connectButton.Visible = !con;
+            _refreshButton.Visible = con;
+            _micButton    .Visible = con;
+            _streamButton .Visible = con;
+        }
+        if (state == DiscordConnectionState.Connected)
+        {
+            // Apply current service state to buttons immediately (don't wait for events)
+            OnMicMuteChanged(_discord.IsMicMuted);
+            OnStreamingStateChanged(_discord.IsStreaming);
+            PopulateChatHistory();
         }
         Invalidate();
+    }
+
+    private void PopulateChatHistory()
+    {
+        var recent = _discord.RecentMessages;
+        if (recent.Count == 0) return;
+
+        _chatBox.SelectionStart  = _chatBox.TextLength;
+        _chatBox.SelectionLength = 0;
+        _chatBox.SelectionColor  = AppTheme.TextMuted;
+        _chatBox.AppendText("── Previous messages ──\n");
+
+        foreach (var msg in recent)
+        {
+            _chatBox.SelectionColor = AppTheme.TextMuted;
+            _chatBox.AppendText($"  ");
+            _chatBox.SelectionColor = AppTheme.Accent;
+            _chatBox.AppendText($"{msg.Author}: ");
+            _chatBox.SelectionColor = AppTheme.TextPrimary;
+            _chatBox.AppendText($"{msg.Content}\n");
+        }
+
+        _chatBox.SelectionColor = AppTheme.TextMuted;
+        _chatBox.AppendText("────────────────────────\n");
+        _chatBox.SelectionStart = _chatBox.TextLength;
+        _chatBox.ScrollToCaret();
     }
 
     private void UpdateStatusLabel()
@@ -643,7 +794,7 @@ public sealed class DiscordPanel : UserControl
 
             // Chat section
             g.DrawLine(sepPen, x, ChatHeaderY - 2, x + w, ChatHeaderY - 2);
-            g.DrawString("CHAT", AppTheme.FontSectionHeader, mutedBrush, x, ChatHeaderY + 2);
+            g.DrawString("MESSAGES", AppTheme.FontSectionHeader, mutedBrush, x, ChatHeaderY + 2);
 
             // Bottom separator above buttons
             g.DrawLine(sepPen, x, ClientSize.Height - 60, x + w, ClientSize.Height - 60);
@@ -663,14 +814,42 @@ public sealed class DiscordPanel : UserControl
         _pcPanel.Controls.Clear();
         _pcMeters.Clear();
 
+        // [0] CPU
         var cpu = new PerfMeter("CPU", GetBarColor(snap.CpuPercent));
         cpu.Update(snap.CpuPercent, $"{snap.CpuPercent:F0}%");
         _pcMeters.Add(cpu);
 
+        // [1] RAM
         var ram = new PerfMeter("MEMORY", AppTheme.Accent);
         ram.Update(snap.RamPercent, $"{snap.RamUsedGb:F1} / {snap.RamTotalGb:F0} GB");
         _pcMeters.Add(ram);
 
+        // [2] GPU utilisation
+        var gpu = new PerfMeter("GPU", GetBarColor(snap.GpuPercent));
+        gpu.Update(snap.GpuPercent, $"{snap.GpuPercent:F0}%");
+        _pcMeters.Add(gpu);
+
+        // [3] GPU VRAM
+        int gpuMemPct = snap.GpuMemTotalGb > 0 ? (int)(snap.GpuMemUsedGb / snap.GpuMemTotalGb * 100) : 0;
+        string gpuMemLabel = snap.GpuMemTotalGb > 0
+            ? $"{snap.GpuMemUsedGb:F1} / {snap.GpuMemTotalGb:F0} GB"
+            : $"{snap.GpuMemUsedGb:F1} GB";
+        var gpuMem = new PerfMeter("GPU VRAM", AppTheme.Accent);
+        gpuMem.Update(gpuMemPct, gpuMemLabel);
+        _pcMeters.Add(gpuMem);
+
+        // [4] Network
+        double netMb = snap.NetBytesPerSec / (1024.0 * 1024);
+        var net = new PerfMeter("NETWORK", AppTheme.TextSecondary);
+        net.Update((int)Math.Min(netMb, 100), $"{netMb:F1} MB/s");
+        _pcMeters.Add(net);
+
+        // [5] Disk I/O activity
+        var diskIo = new PerfMeter("DISK I/O", GetBarColor(snap.DiskActivityPercent));
+        diskIo.Update(snap.DiskActivityPercent, $"{snap.DiskActivityPercent:F0}%");
+        _pcMeters.Add(diskIo);
+
+        // [6+] Drive space
         foreach (var d in snap.Drives)
         {
             var dm = new PerfMeter($"DISK  {d.Name}", AppTheme.TextSecondary);
@@ -697,16 +876,50 @@ public sealed class DiscordPanel : UserControl
         if (_pcMeters.Count == 0) return;
         var snap = _pcSvc.GetSnapshot();
 
+        // [0] CPU
         _pcMeters[0].BarColor = GetBarColor(snap.CpuPercent);
         _pcMeters[0].Update(snap.CpuPercent, $"{snap.CpuPercent:F0}%");
 
-        if (_pcMeters.Count >= 2)
+        // [1] RAM
+        if (_pcMeters.Count > 1)
             _pcMeters[1].Update(snap.RamPercent, $"{snap.RamUsedGb:F1} / {snap.RamTotalGb:F0} GB");
 
-        for (int i = 0; i < snap.Drives.Count && i + 2 < _pcMeters.Count; i++)
+        // [2] GPU utilisation
+        if (_pcMeters.Count > 2)
+        {
+            _pcMeters[2].BarColor = GetBarColor(snap.GpuPercent);
+            _pcMeters[2].Update(snap.GpuPercent, $"{snap.GpuPercent:F0}%");
+        }
+
+        // [3] GPU VRAM
+        if (_pcMeters.Count > 3)
+        {
+            int gpuMemPct = snap.GpuMemTotalGb > 0 ? (int)(snap.GpuMemUsedGb / snap.GpuMemTotalGb * 100) : 0;
+            string gpuMemLabel = snap.GpuMemTotalGb > 0
+                ? $"{snap.GpuMemUsedGb:F1} / {snap.GpuMemTotalGb:F0} GB"
+                : $"{snap.GpuMemUsedGb:F1} GB";
+            _pcMeters[3].Update(gpuMemPct, gpuMemLabel);
+        }
+
+        // [4] Network
+        if (_pcMeters.Count > 4)
+        {
+            double netMb = snap.NetBytesPerSec / (1024.0 * 1024);
+            _pcMeters[4].Update((int)Math.Min(netMb, 100), $"{netMb:F1} MB/s");
+        }
+
+        // [5] Disk I/O
+        if (_pcMeters.Count > 5)
+        {
+            _pcMeters[5].BarColor = GetBarColor(snap.DiskActivityPercent);
+            _pcMeters[5].Update(snap.DiskActivityPercent, $"{snap.DiskActivityPercent:F0}%");
+        }
+
+        // [6+] Drive space
+        for (int i = 0; i < snap.Drives.Count && i + 6 < _pcMeters.Count; i++)
         {
             var d = snap.Drives[i];
-            _pcMeters[i + 2].Update(d.Percent, $"{d.UsedGb:F0} / {d.TotalGb:F0} GB");
+            _pcMeters[i + 6].Update(d.Percent, $"{d.UsedGb:F0} / {d.TotalGb:F0} GB");
         }
 
         if (_pcInfoLabel != null)
@@ -781,6 +994,7 @@ public sealed class DiscordPanel : UserControl
         {
             _pcTimer?.Stop();
             _pcTimer?.Dispose();
+            _pcSvc.Dispose();
             _discord.ConnectionStateChanged -= OnConnectionChanged;
             _discord.VoiceStateChanged      -= OnVoiceStateChanged;
             _discord.MicMuteChanged         -= OnMicMuteChanged;
