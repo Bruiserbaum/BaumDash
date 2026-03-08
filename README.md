@@ -1,4 +1,4 @@
-BombDash is a Windows Forms application built in C# on .NET, designed to act as a dedicated control dashboard for a secondary touchscreen. It is optimized for a 13-inch 1920×720 touchscreen running Windows 11, typically positioned below a primary monitor to provide quick, glanceable system control without interrupting your main workflow.
+BaumDash is a Windows Forms application built in C# on .NET, designed to act as a dedicated control dashboard for a secondary touchscreen. It is optimized for a 13-inch 1920×720 touchscreen running Windows 11, typically positioned below a primary monitor to provide quick, glanceable system control without interrupting your main workflow.
 
 The goal of BombDash is simple: put the most useful system controls, integrations, and information panels in one touch-friendly dashboard.
 
