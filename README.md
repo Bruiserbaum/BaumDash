@@ -6,6 +6,9 @@ Designed for a **1920×720 ultrawide monitor**, BaumDash sits at the top or bott
 
 ---
 
+<img width="1919" height="719" alt="image" src="https://github.com/user-attachments/assets/80d1574a-a1d4-40ad-bdc3-250a9d917cbf" />
+
+
 ## Features
 
 | Panel | What it does |
