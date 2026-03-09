@@ -1402,7 +1402,7 @@ public sealed class SettingsDialog : Form
 
             AppTheme.RaiseThemeChanged();
 
-            ShowStatus("Saved. Restart BaumDash to apply weather changes.", success: true);
+            ShowStatus("Settings saved.", success: true);
         }
         catch (Exception ex)
         {
