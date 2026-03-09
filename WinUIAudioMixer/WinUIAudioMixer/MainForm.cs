@@ -20,19 +20,24 @@ public sealed class MainForm : Form
     private readonly AnythingLLMService?      _aiSvc;
     private readonly ChatGptService?          _chatGptSvc;
     private readonly GoogleCalendarService?   _calSvc;
+    private readonly WeatherService?          _weatherSvc;
     private MediaSessionService?              _mediaSvc;
 
     // Panels
-    private AudioDevicePanel? _devicePanel;
-    private AppVolumePanel?   _volumePanel;
-    private MediaPanel?       _mediaPanel;
-    private DiscordPanel?     _discordPanel;
+    private AudioDevicePanel?  _devicePanel;
+    private AppVolumePanel?    _volumePanel;
+    private MediaPanel?        _mediaPanel;
+    private DiscordPanel?      _discordPanel;
+    private TableLayoutPanel?  _contentLayout;
+
+    // Layout profile: "auto" / "1920" / "2560"
+    private string _layoutProfile = "auto";
 
     // Drag support (borderless move)
     private Point   _dragStart;
     private bool    _dragging;
     private Button? _btnMax;
-    private Button? _btnSettings, _btnHelp; // overlay buttons — brought to front in OnLoad
+    private Button? _btnSettings, _btnHelp, _btnUpdate; // overlay buttons — brought to front in OnLoad
     private NotifyIcon? _trayIcon;
     private bool _exitRequested;
     private bool _closeToTray = true;
@@ -70,7 +75,10 @@ public sealed class MainForm : Form
         var calConfig = GoogleCalendarService.LoadConfig();
         _calSvc = calConfig != null ? new GoogleCalendarService(calConfig) : null;
 
-        // General settings
+        // Weather: weather-config.json next to the exe (optional)
+        _weatherSvc = WeatherService.LoadAndCreate();
+
+        // General settings — apply theme + background image BEFORE building any UI
         try
         {
             var genPath = Path.Combine(AppContext.BaseDirectory, "general-config.json");
@@ -79,7 +87,22 @@ public sealed class MainForm : Form
                 var cfg = System.Text.Json.JsonSerializer.Deserialize<Models.GeneralConfig>(
                     File.ReadAllText(genPath),
                     new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-                if (cfg != null) _closeToTray = cfg.CloseToTray;
+                if (cfg != null)
+                {
+                    _closeToTray   = cfg.CloseToTray;
+                    _layoutProfile = cfg.LayoutProfile ?? "auto";
+                    AppTheme.Apply(cfg.Theme, cfg.CustomAccentHex);
+                    if (!string.IsNullOrEmpty(cfg.BgImagePath) && File.Exists(cfg.BgImagePath))
+                    {
+                        try
+                        {
+                            AppTheme.BgImage        = Image.FromFile(cfg.BgImagePath);
+                            AppTheme.BgImageMode    = cfg.BgImageMode;
+                            AppTheme.BgOverlayAlpha = cfg.BgOverlayAlpha;
+                        }
+                        catch { }
+                    }
+                }
             }
         }
         catch { }
@@ -167,38 +190,58 @@ public sealed class MainForm : Form
         var btnSettings = new Button
         {
             Text      = "⚙",
-            Font      = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Font      = new Font("Segoe UI", 14f, FontStyle.Bold),
             ForeColor = AppTheme.TextSecondary,
             BackColor = AppTheme.BgCard,
             FlatStyle = FlatStyle.Flat,
-            Size      = new Size(28, 28),
+            Size      = new Size(44, 44),
             Cursor    = Cursors.Hand,
             Anchor    = AnchorStyles.Bottom | AnchorStyles.Left,
             FlatAppearance = { BorderSize = 1, BorderColor = AppTheme.Border,
                                MouseOverBackColor = AppTheme.BgPanel },
         };
         btnSettings.Location = new Point(8, ClientSize.Height - btnSettings.Height - 8);
-        btnSettings.Click   += (_, _) => new SettingsDialog().ShowDialog(this);
+        btnSettings.Click   += OnSettingsClick;
         Controls.Add(btnSettings);
         _btnSettings = btnSettings; // brought to front in OnLoad
 
         var btnHelp = new Button
         {
             Text      = "?",
-            Font      = new Font("Segoe UI", 10f, FontStyle.Bold),
+            Font      = new Font("Segoe UI", 14f, FontStyle.Bold),
             ForeColor = AppTheme.TextSecondary,
             BackColor = AppTheme.BgCard,
             FlatStyle = FlatStyle.Flat,
-            Size      = new Size(28, 28),
+            Size      = new Size(44, 44),
             Cursor    = Cursors.Hand,
             Anchor    = AnchorStyles.Bottom | AnchorStyles.Left,
             FlatAppearance = { BorderSize = 1, BorderColor = AppTheme.Border,
                                MouseOverBackColor = AppTheme.BgPanel },
         };
-        btnHelp.Location = new Point(44, ClientSize.Height - btnHelp.Height - 8);
+        btnHelp.Location = new Point(60, ClientSize.Height - btnHelp.Height - 8);
         btnHelp.Click   += (_, _) => ShowHelpDialog();
         Controls.Add(btnHelp);
         _btnHelp = btnHelp; // brought to front in OnLoad
+
+        // Update-available button (hidden until a newer release is found)
+        var btnUpdate = new Button
+        {
+            Text      = "⬆ Update",
+            Font      = new Font("Segoe UI", 8.5f, FontStyle.Bold),
+            ForeColor = Color.White,
+            BackColor = AppTheme.Warning,
+            FlatStyle = FlatStyle.Flat,
+            Size      = new Size(72, 28),
+            Cursor    = Cursors.Hand,
+            Anchor    = AnchorStyles.Bottom | AnchorStyles.Left,
+            Visible   = false,
+            FlatAppearance = { BorderSize = 0,
+                               MouseOverBackColor = ControlPaint.Dark(AppTheme.Warning, 0.12f) },
+        };
+        btnUpdate.Location = new Point(112, ClientSize.Height - btnUpdate.Height - 8);
+        btnUpdate.Click   += OnUpdateButtonClick;
+        Controls.Add(btnUpdate);
+        _btnUpdate = btnUpdate;
 
         InitTrayIcon();
     }
@@ -249,9 +292,44 @@ public sealed class MainForm : Form
         if (_trayIcon != null) _trayIcon.Visible = false;
     }
 
+    // ── Layout profiles ───────────────────────────────────────────────────────
+
+    private static (int c0, int c1, int c2, int formW) ResolveLayout(string profile, Control? reference = null)
+    {
+        string resolved = profile;
+        if (profile == "auto")
+        {
+            var screen = reference != null ? Screen.FromControl(reference) : Screen.PrimaryScreen;
+            resolved = (screen?.WorkingArea.Width ?? 1920) >= 2500 ? "2560" : "1920";
+        }
+        return resolved == "2560"
+            ? (320, 700, 500, 2560)   // 2560×720: wider AppVolume + Media for ultrawide
+            : (300, 500, 400, 1920);  // 1920×720: default
+    }
+
+    private void ApplyLayout(string profile)
+    {
+        _layoutProfile = profile;
+        var (c0, c1, c2, formW) = ResolveLayout(profile, this);
+
+        if (_contentLayout != null)
+        {
+            _contentLayout.SuspendLayout();
+            _contentLayout.ColumnStyles[0] = new ColumnStyle(SizeType.Absolute, c0);
+            _contentLayout.ColumnStyles[1] = new ColumnStyle(SizeType.Absolute, c1);
+            _contentLayout.ColumnStyles[2] = new ColumnStyle(SizeType.Absolute, c2);
+            _contentLayout.ResumeLayout(true);
+        }
+
+        if (Width != formW)
+            Width = formW;
+    }
+
     private void CreatePanels()
     {
-        var layout = new TableLayoutPanel
+        var (c0, c1, c2, _) = ResolveLayout(_layoutProfile, this);
+
+        _contentLayout = new TableLayoutPanel
         {
             Dock        = DockStyle.Fill,
             ColumnCount = 4,
@@ -261,16 +339,17 @@ public sealed class MainForm : Form
             Margin      = new Padding(0),
             Padding     = new Padding(0),
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 300));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 500));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 400));
+        var layout = _contentLayout;
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, c0));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, c1));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, c2));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,  100));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        _devicePanel  = new AudioDevicePanel(_audioDeviceSvc, _haSvc) { Dock = DockStyle.Fill };
+        _devicePanel  = new AudioDevicePanel(_audioDeviceSvc) { Dock = DockStyle.Fill };
         _volumePanel  = new AppVolumePanel(_audioSessionSvc)    { Dock = DockStyle.Fill };
-        _mediaPanel   = new MediaPanel()                        { Dock = DockStyle.Fill };
-        _discordPanel = new DiscordPanel(_discordSvc, _aiSvc, _chatGptSvc, _calSvc) { Dock = DockStyle.Fill };
+        _mediaPanel   = new MediaPanel(_weatherSvc)             { Dock = DockStyle.Fill };
+        _discordPanel = new DiscordPanel(_discordSvc, _aiSvc, _chatGptSvc, _calSvc, _haSvc) { Dock = DockStyle.Fill };
 
         // Media control event wiring
         _mediaPanel.PlayPauseRequested += async () => { if (_mediaSvc != null) await _mediaSvc.TogglePlayPauseAsync(); };
@@ -315,10 +394,19 @@ public sealed class MainForm : Form
         SuspendLayout();
         _btnSettings?.BringToFront();
         _btnHelp    ?.BringToFront();
+        _btnUpdate  ?.BringToFront();
         ResumeLayout(false);
 
         // Start audio notification listener
         _audioNotifySvc.Start();
+
+        // Check for updates silently in the background
+        _ = Task.Run(async () =>
+        {
+            var release = await Services.UpdateService.CheckAsync();
+            if (release != null)
+                BeginInvoke(() => ShowUpdateButton(release));
+        });
 
         // Bootstrap SMTC media service
         try
@@ -336,6 +424,52 @@ public sealed class MainForm : Form
 
     // ── Audio changed callback ────────────────────────────────────────────────
 
+    private void OnSettingsClick(object? sender, EventArgs e)
+    {
+        using var dlg = new SettingsDialog();
+        dlg.ShowDialog(this);
+        ApplySettingsRefresh();
+    }
+
+    /// <summary>
+    /// Re-reads all config files after the Settings dialog closes and hot-applies
+    /// any changes to the running panels — no restart needed.
+    /// </summary>
+    private void ApplySettingsRefresh()
+    {
+        // ── General config ────────────────────────────────────────────────────
+        try
+        {
+            var genPath = Path.Combine(AppContext.BaseDirectory, "general-config.json");
+            if (File.Exists(genPath))
+            {
+                var cfg = System.Text.Json.JsonSerializer.Deserialize<Models.GeneralConfig>(
+                    File.ReadAllText(genPath),
+                    new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (cfg != null)
+                {
+                    _closeToTray = cfg.CloseToTray;
+                    _devicePanel?.ApplyGpuPlatform(cfg.GpuPlatform);
+                    ApplyLayout(cfg.LayoutProfile ?? "auto");
+                }
+            }
+        }
+        catch { }
+
+        // ── Weather config ────────────────────────────────────────────────────
+        // Reload the service from disk and hand the new instance to MediaPanel.
+        try
+        {
+            var newWeather = Services.WeatherService.LoadAndCreate();
+            _mediaPanel?.UpdateWeatherService(newWeather);
+        }
+        catch { }
+
+        // ── Audio devices ─────────────────────────────────────────────────────
+        _devicePanel?.LoadDevices();
+        _volumePanel?.LoadSessions();
+    }
+
     private void OnAudioChanged()
     {
         // SynchronizationContext captured in the constructor may be null (before
@@ -345,6 +479,99 @@ public sealed class MainForm : Form
         _devicePanel?.LoadDevices();
         _volumePanel?.LoadSessions();
     }
+
+    private void ShowUpdateButton(Services.UpdateReleaseInfo release)
+    {
+        if (_btnUpdate == null) return;
+        _btnUpdate.Text    = $"⬆ v{release.Version}";
+        _btnUpdate.Visible = true;
+        _btnUpdate.BringToFront();
+
+        // Also show a tray balloon if running in the tray
+        if (_trayIcon?.Visible == true)
+            _trayIcon.ShowBalloonTip(6000, "BaumDash Update Available",
+                $"Version {release.Version} is ready to download.", ToolTipIcon.Info);
+    }
+
+    private void OnUpdateButtonClick(object? sender, EventArgs e)
+    {
+        var release = Services.UpdateService.AvailableRelease;
+        if (release == null) return;
+
+        var result = MessageBox.Show(this,
+            $"BaumDash {release.Version} is available  (current: {Services.UpdateService.CurrentVersion}).\n\n" +
+            "Download and install now?\n" +
+            "BaumDash will close and the installer will open.",
+            "Update Available",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information);
+
+        if (result != DialogResult.Yes) return;
+
+        // Show a simple progress dialog while downloading
+        using var dlg = new Form
+        {
+            Text            = "Downloading Update…",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            BackColor       = AppTheme.BgDeep,
+            ForeColor       = AppTheme.TextPrimary,
+            ClientSize      = new Size(360, 90),
+            StartPosition   = FormStartPosition.CenterParent,
+            MaximizeBox     = false,
+            MinimizeBox     = false,
+            ShowInTaskbar   = false,
+            ControlBox      = false,
+        };
+        var lbl = new Label
+        {
+            Text      = $"Downloading BaumDash {release.Version}…",
+            Font      = AppTheme.FontLabel,
+            ForeColor = AppTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            AutoSize  = false,
+            Location  = new Point(16, 14),
+            Size      = new Size(328, 20),
+        };
+        var bar = new ProgressBar
+        {
+            Style    = ProgressBarStyle.Continuous,
+            Location = new Point(16, 44),
+            Size     = new Size(328, 22),
+            Minimum  = 0,
+            Maximum  = 100,
+        };
+        dlg.Controls.AddRange(new Control[] { lbl, bar });
+
+        var cts      = new CancellationTokenSource();
+        var progress = new Progress<int>(pct =>
+        {
+            if (!dlg.IsDisposed)
+            {
+                bar.Value    = Math.Min(pct, 100);
+                lbl.Text     = $"Downloading BaumDash {release.Version}…  {pct}%";
+            }
+        });
+
+        dlg.Shown += async (_, _) =>
+        {
+            try
+            {
+                await Services.UpdateService.DownloadAndInstallAsync(release, progress, cts.Token);
+            }
+            catch (OperationCanceledException) { dlg.Close(); }
+            catch (Exception ex)
+            {
+                dlg.Close();
+                MessageBox.Show(this, $"Download failed:\n{ex.Message}",
+                    "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        };
+
+        dlg.ShowDialog(this);
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+        => AppTheme.PaintBackground(e.Graphics, this, AppTheme.BgDeep);
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -395,7 +622,11 @@ public sealed class MainForm : Form
         }
         else
         {
-            _trayIcon?.Dispose();
+            if (_trayIcon != null)
+            {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+            }
         }
     }
 
@@ -656,6 +887,7 @@ public sealed class MainForm : Form
             _haSvc         ?.Dispose();
             _aiSvc         ?.Dispose();
             _chatGptSvc    ?.Dispose();
+            _weatherSvc    ?.Dispose();
             _mediaSvc      ?.Dispose();
         }
         base.Dispose(disposing);
