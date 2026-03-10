@@ -12,7 +12,7 @@ public sealed record UpdateReleaseInfo(string Version, string DownloadUrl, strin
 public static class UpdateService
 {
     /// <summary>Version that is currently running.  Bump this with every release.</summary>
-    public const string CurrentVersion = "2.3.3";
+    public const string CurrentVersion = "2.3.6";
 
     private const string GitHubOwner = "Bruiserbaum";
     private const string GitHubRepo  = "BaumDash";
