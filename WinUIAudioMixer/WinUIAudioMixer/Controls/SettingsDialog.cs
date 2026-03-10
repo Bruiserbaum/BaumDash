@@ -33,7 +33,7 @@ public sealed class SettingsDialog : Form
     private RadioButton? _rbLayoutAuto, _rbLayout1920, _rbLayout2560;
 
     // Appearance
-    private RadioButton? _rbDark, _rbLight, _rbCustom;
+    private RadioButton? _rbDark, _rbLight;
     private Button?      _btnAccentPicker;
     private Color        _customAccent = AppTheme.DefaultAccent;
 
@@ -839,12 +839,15 @@ public sealed class SettingsDialog : Form
         var themeRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(DlgW, 26) };
         _rbDark  = MakeRadioButton("Dark (default)", themeRow, FieldX,       0);
         _rbLight = MakeRadioButton("Light",          themeRow, FieldX + 130, 0);
-        _rbCustom= MakeRadioButton("Custom accent",  themeRow, FieldX + 230, 0);
         _rbDark.Checked = true;
         scroll.Controls.Add(themeRow);
         y += 26;
+        AddHint(scroll, "Restart BaumDash after saving to apply theme changes.", ref y, 22);
 
-        // Accent colour picker (enabled only when Custom is selected)
+        // ── Accent Colour ─────────────────────────────────────────────────────
+        y += 2;
+        AddSectionLabel(scroll, "ACCENT COLOUR", ref y);
+
         var accentRow = new Panel
         {
             BackColor = Color.Transparent,
@@ -903,7 +906,7 @@ public sealed class SettingsDialog : Form
 
         var accentHexLbl = new Label
         {
-            Text      = "  Pick accent colour (Custom theme only). Reset = default blue.",
+            Text      = "  Applies to both Dark and Light themes. Reset = default blue.",
             Font      = AppTheme.FontSmall,
             ForeColor = AppTheme.TextMuted,
             BackColor = Color.Transparent,
@@ -914,19 +917,6 @@ public sealed class SettingsDialog : Form
         accentRow.Controls.AddRange(new Control[] { accentLbl, _btnAccentPicker, btnResetAccent, accentHexLbl });
         scroll.Controls.Add(accentRow);
         y += 28;
-
-        void UpdateAccentRowEnabled()
-        {
-            bool en = _rbCustom?.Checked ?? false;
-            accentLbl     .ForeColor = en ? AppTheme.TextSecondary : AppTheme.TextMuted;
-            _btnAccentPicker.Enabled  = en;
-        }
-        _rbDark  .CheckedChanged += (_, _) => UpdateAccentRowEnabled();
-        _rbLight .CheckedChanged += (_, _) => UpdateAccentRowEnabled();
-        _rbCustom.CheckedChanged += (_, _) => UpdateAccentRowEnabled();
-        UpdateAccentRowEnabled();
-
-        AddHint(scroll, "Restart BaumDash after saving to apply theme changes.", ref y, 22);
 
         // ── Discord Panel Tabs ────────────────────────────────────────────────
         y += 2;
@@ -1276,11 +1266,13 @@ public sealed class SettingsDialog : Form
                 {
                     _chkCloseToTray.Checked = cfg.CloseToTray;
 
-                    switch (cfg.Theme.ToLowerInvariant())
+                    if (cfg.Theme.Equals("light", StringComparison.OrdinalIgnoreCase))
                     {
-                        case "light":  if (_rbLight  != null) _rbLight .Checked = true; break;
-                        case "custom": if (_rbCustom != null) _rbCustom.Checked = true; break;
-                        default:       if (_rbDark   != null) _rbDark  .Checked = true; break;
+                        if (_rbLight != null) _rbLight.Checked = true;
+                    }
+                    else
+                    {
+                        if (_rbDark != null) _rbDark.Checked = true; // "dark", "custom" (legacy), default
                     }
                     if (!string.IsNullOrEmpty(cfg.CustomAccentHex) && _btnAccentPicker != null)
                     {
@@ -1410,9 +1402,7 @@ public sealed class SettingsDialog : Form
             }
 
             // General
-            string theme = (_rbLight?.Checked  == true) ? "light"
-                         : (_rbCustom?.Checked == true) ? "custom"
-                         : "dark";
+            string theme = (_rbLight?.Checked == true) ? "light" : "dark";
             int    alpha    = _bgAlphaSlider?.Value ?? 190;
             string bgPath   = _bgPathBox?.Text.Trim() ?? "";
             string bgMode   = _bgModeCombo?.SelectedItem?.ToString() ?? "stretch";
@@ -1450,7 +1440,7 @@ public sealed class SettingsDialog : Form
             // ── Live theme application ─────────────────────────────────────────
             var oldColors = SnapshotThemeColors();
 
-            AppTheme.Apply(theme, theme == "custom" ? accentHx : "");
+            AppTheme.Apply(theme, accentHx);
             AppTheme.BgOverlayAlpha = alpha;
             AppTheme.BgImageMode    = bgMode;
 

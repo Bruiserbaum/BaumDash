@@ -99,22 +99,19 @@ public static class AppTheme
         AccentHover = ControlPaint.Dark(accent, 0.12f);
     }
 
-    /// <summary>Apply a theme from string key; optionally override accent from a hex string.</summary>
+    /// <summary>Apply a theme from string key; accent colour is always applied independently.</summary>
     public static void Apply(string theme, string accentHex = "")
     {
-        switch (theme.ToLowerInvariant())
+        if (theme.Equals("light", StringComparison.OrdinalIgnoreCase))
+            ApplyLight();
+        else
+            ApplyDark(); // "dark", "custom" (legacy), or any unknown value
+
+        // Apply accent on top of whichever base theme was chosen
+        if (ParseHex(accentHex) is Color accent)
         {
-            case "light":
-                ApplyLight();
-                if (ParseHex(accentHex) is Color la) { Accent = la; AccentHover = ControlPaint.Dark(la, 0.12f); }
-                break;
-            case "custom":
-                ApplyCustom(ParseHex(accentHex) ?? Color.FromArgb(88, 101, 242));
-                break;
-            default: // "dark"
-                ApplyDark();
-                if (ParseHex(accentHex) is Color da) { Accent = da; AccentHover = ControlPaint.Dark(da, 0.12f); }
-                break;
+            Accent      = accent;
+            AccentHover = ControlPaint.Dark(accent, 0.12f);
         }
     }
 
