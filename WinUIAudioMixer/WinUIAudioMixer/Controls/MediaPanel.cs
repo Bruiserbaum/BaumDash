@@ -4,13 +4,16 @@ using WinUIAudioMixer.Services;
 namespace WinUIAudioMixer.Controls;
 
 /// <summary>
-/// Centre-right panel – album art, media controls (prev/play/next), and a live clock.
+/// Centre-right panel – album art, media controls (prev/play/next), live clock, and weather.
 /// Width: ~400 px
 /// </summary>
 public sealed class MediaPanel : UserControl
 {
     private readonly System.Windows.Forms.Timer _clockTimer;
-    private MediaInfo _current = new();
+    private System.Windows.Forms.Timer?         _weatherTimer;
+    private MediaInfo       _current = new();
+    private WeatherService? _weatherSvc;
+    private WeatherSnapshot? _weather;
 
     // Cached bitmaps
     private Bitmap? _thumbScaled;
@@ -24,8 +27,9 @@ public sealed class MediaPanel : UserControl
     public event Func<Task>? NextRequested;
     public event Func<Task>? PreviousRequested;
 
-    public MediaPanel()
+    public MediaPanel(WeatherService? weatherSvc = null)
     {
+        _weatherSvc = weatherSvc;
         BackColor = AppTheme.BgPanel;
         SetStyle(ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.AllPaintingInWmPaint  |
@@ -49,9 +53,64 @@ public sealed class MediaPanel : UserControl
         _clockTimer = new System.Windows.Forms.Timer { Interval = 1000 };
         _clockTimer.Tick += (_, _) => InvalidateClock();
         _clockTimer.Start();
+
+        // Weather refresh every 10 minutes
+        if (_weatherSvc != null)
+        {
+            _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60 * 1000 };
+            _weatherTimer.Tick += (_, _) => _ = Task.Run(FetchWeatherAsync);
+            _weatherTimer.Start();
+        }
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        if (_weatherSvc != null)
+            BeginInvoke(async () => await FetchWeatherAsync());
+    }
+
+    private async Task FetchWeatherAsync()
+    {
+        if (_weatherSvc == null) return;
+        var snap = await _weatherSvc.GetWeatherAsync();
+        if (snap == null) return;
+        if (InvokeRequired) BeginInvoke(() => { _weather = snap; Invalidate(); });
+        else                { _weather = snap; Invalidate(); }
     }
 
     // ── Public API ────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Hot-swap the weather service after settings change.
+    /// Disposes the old service, starts the timer if needed, and triggers an immediate fetch.
+    /// </summary>
+    public void UpdateWeatherService(WeatherService? newSvc)
+    {
+        // Dispose old service (MediaPanel owns it)
+        var old = _weatherSvc;
+        _weatherSvc = newSvc;
+        old?.Dispose();
+
+        // Stop the existing timer
+        _weatherTimer?.Stop();
+        _weatherTimer?.Dispose();
+        _weatherTimer = null;
+
+        // Clear stale snapshot so the placeholder shows if there's no service
+        _weather = null;
+        Invalidate();
+
+        if (_weatherSvc == null) return;
+
+        // Restart 10-minute refresh timer
+        _weatherTimer = new System.Windows.Forms.Timer { Interval = 10 * 60 * 1000 };
+        _weatherTimer.Tick += (_, _) => _ = Task.Run(FetchWeatherAsync);
+        _weatherTimer.Start();
+
+        // Fetch immediately
+        _ = Task.Run(FetchWeatherAsync);
+    }
 
     public void UpdateMedia(MediaInfo info)
     {
@@ -85,15 +144,12 @@ public sealed class MediaPanel : UserControl
         _btnNext.SetBounds(cx +  60, by, 88, 88);
     }
 
-    private void InvalidateClock() => Invalidate(ClockRegion());
-
-    private Rectangle ClockRegion()
-    {
-        int w = ClientSize.Width, h = ClientSize.Height;
-        return new Rectangle(0, h / 2 + 30, w, h / 2 - 30);
-    }
+    private void InvalidateClock() => Invalidate();
 
     // ── Painting ──────────────────────────────────────────────────────────────
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+        => AppTheme.PaintBackground(e.Graphics, this, AppTheme.BgPanel);
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -105,14 +161,14 @@ public sealed class MediaPanel : UserControl
 
         // ── Section header ────────────────────────────────────────────────────
         using var mutedBrush = new SolidBrush(AppTheme.TextMuted);
-        g.DrawString("MEDIA CONTROLS", AppTheme.FontSectionHeader, mutedBrush, 16, 14);
+        g.DrawString("MEDIA CONTROLS", AppTheme.FontPanelHeader, mutedBrush, 16, 14);
 
         using var sepPen = new Pen(AppTheme.Border);
-        g.DrawLine(sepPen, 16, 36, ClientSize.Width - 16, 36);
+        g.DrawLine(sepPen, 16, 44, ClientSize.Width - 16, 44);
 
         // ── Album art ─────────────────────────────────────────────────────────
         const int thumbSize = 152;
-        int tx = cx - thumbSize / 2, ty = 48;
+        int tx = cx - thumbSize / 2, ty = 54;
         var thumbRect = new Rectangle(tx, ty, thumbSize, thumbSize);
 
         if (_thumbScaled != null)
@@ -174,11 +230,164 @@ public sealed class MediaPanel : UserControl
         using var clockBrush = new SolidBrush(AppTheme.TextPrimary);
         using var dateBrush  = new SolidBrush(AppTheme.TextSecondary);
 
-        var timeRect = new RectangleF(0, clockY, ClientSize.Width, 70);
-        var dateRect = new RectangleF(0, clockY + 72, ClientSize.Width, 28);
+        var timeRect = new RectangleF(0, clockY, ClientSize.Width, 82);
+        var dateRect = new RectangleF(0, clockY + 84, ClientSize.Width, 28);
 
         g.DrawString(time, AppTheme.FontClock,     clockBrush, timeRect, timeFmt);
         g.DrawString(date, AppTheme.FontClockDate, dateBrush,  dateRect, dateFmt);
+
+        // ── Weather ───────────────────────────────────────────────────────────
+        {
+            int wy = clockY + 84 + 28 + 10; // just below the date
+
+            g.DrawLine(sepPen, 16, wy, ClientSize.Width - 16, wy);
+            wy += 12;
+
+            var wFmt = new StringFormat { Alignment = StringAlignment.Center };
+
+            if (_weather != null)
+            {
+                DrawWeatherIcon(g, _weather.Condition, cx, wy);
+                wy += 56;
+
+                using var condBrush   = new SolidBrush(AppTheme.TextPrimary);
+                using var detailBrush = new SolidBrush(AppTheme.TextSecondary);
+
+                var condRect = new RectangleF(0, wy, ClientSize.Width, 26);
+                g.DrawString(_weather.Condition, AppTheme.FontClockDate, condBrush, condRect, wFmt);
+                wy += 28;
+
+                string hiLo = $"H: {_weather.TempHigh:F0}{_weather.TempUnit}   " +
+                              $"L: {_weather.TempLow:F0}{_weather.TempUnit}";
+                string wind = $"Wind: {_weather.WindSpeed:F0} {_weather.WindUnit}";
+                string detail = $"{hiLo}     {wind}";
+
+                var detailRect = new RectangleF(0, wy, ClientSize.Width, 20);
+                g.DrawString(detail, AppTheme.FontLabel, detailBrush, detailRect, wFmt);
+            }
+            else
+            {
+                using var placeholderBr = new SolidBrush(AppTheme.TextMuted);
+                string msg = _weatherSvc == null
+                    ? "Weather not configured"
+                    : "Loading weather…";
+                var msgRect = new RectangleF(0, wy + 16, ClientSize.Width, 22);
+                g.DrawString(msg, AppTheme.FontLabel, placeholderBr, msgRect, wFmt);
+            }
+        }
+    }
+
+    // ── Weather icons ─────────────────────────────────────────────────────────
+
+    /// <summary>Draws a 52×52 weather icon centred at (cx, top+26).</summary>
+    private static void DrawWeatherIcon(Graphics g, string condition, int cx, int top)
+    {
+        int cy = top + 26;
+        switch (condition)
+        {
+            case "Clear":
+                DrawSun(g, cx, cy, 12, 22);
+                break;
+            case "Partly Cloudy":
+                DrawSun(g, cx - 10, cy - 8, 9, 16);
+                DrawCloud(g, Color.FromArgb(170, 185, 200), cx + 4, cy + 6);
+                break;
+            case "Overcast":
+                DrawCloud(g, Color.FromArgb(130, 145, 158), cx, cy);
+                break;
+            case "Foggy":
+                DrawFog(g, cx, top);
+                break;
+            case "Rainy":
+                DrawCloud(g, Color.FromArgb(100, 125, 160), cx, cy - 8);
+                DrawRain(g, cx, cy + 10);
+                break;
+            case "Snowy":
+                DrawCloud(g, Color.FromArgb(175, 188, 208), cx, cy - 8);
+                DrawSnow(g, cx, cy + 10);
+                break;
+            case "Thunderstorm":
+                DrawCloud(g, Color.FromArgb(75, 85, 105), cx, cy - 8);
+                DrawLightning(g, cx, cy + 10);
+                break;
+        }
+    }
+
+    private static void DrawSun(Graphics g, int cx, int cy, int innerR, int outerR)
+    {
+        using var fill = new SolidBrush(Color.FromArgb(255, 196, 40));
+        using var ray  = new Pen(Color.FromArgb(255, 196, 40), 2f) { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        for (int i = 0; i < 8; i++)
+        {
+            double a = i * Math.PI / 4;
+            g.DrawLine(ray,
+                cx + (float)(Math.Cos(a) * (innerR + 4)),
+                cy + (float)(Math.Sin(a) * (innerR + 4)),
+                cx + (float)(Math.Cos(a) * outerR),
+                cy + (float)(Math.Sin(a) * outerR));
+        }
+        g.FillEllipse(fill, cx - innerR, cy - innerR, innerR * 2, innerR * 2);
+    }
+
+    private static void DrawCloud(Graphics g, Color color, int cx, int cy)
+    {
+        using var b = new SolidBrush(color);
+        g.FillEllipse(b, cx - 20, cy - 3,  40, 16); // base body
+        g.FillEllipse(b, cx - 16, cy - 12, 18, 16); // left bump
+        g.FillEllipse(b, cx -  5, cy - 15, 20, 18); // centre bump
+        g.FillEllipse(b, cx +  5, cy - 11, 16, 14); // right bump
+    }
+
+    private static void DrawRain(Graphics g, int cx, int baseY)
+    {
+        using var pen = new Pen(Color.FromArgb(110, 165, 225), 1.8f)
+            { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        for (int i = -1; i <= 1; i++)
+        {
+            int x = cx + i * 11;
+            g.DrawLine(pen, x, baseY, x - 5, baseY + 16);
+        }
+    }
+
+    private static void DrawSnow(Graphics g, int cx, int baseY)
+    {
+        using var pen = new Pen(Color.FromArgb(195, 220, 255), 1.6f)
+            { StartCap = LineCap.Round, EndCap = LineCap.Round };
+        int[] xs = { cx - 12, cx, cx + 12 };
+        foreach (int x in xs)
+        {
+            int y = baseY + 8;
+            g.DrawLine(pen, x - 5, y,     x + 5, y);
+            g.DrawLine(pen, x,     y - 5, x,     y + 5);
+            g.DrawLine(pen, x - 4, y - 4, x + 4, y + 4);
+            g.DrawLine(pen, x + 4, y - 4, x - 4, y + 4);
+        }
+    }
+
+    private static void DrawLightning(Graphics g, int cx, int baseY)
+    {
+        using var pen = new Pen(Color.FromArgb(255, 218, 50), 2.5f)
+            { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round };
+        PointF[] pts =
+        [
+            new(cx + 5,  baseY),
+            new(cx - 2,  baseY + 9),
+            new(cx + 3,  baseY + 9),
+            new(cx - 6,  baseY + 22),
+        ];
+        g.DrawLines(pen, pts);
+    }
+
+    private static void DrawFog(Graphics g, int cx, int top)
+    {
+        using var pen = new Pen(Color.FromArgb(155, 165, 175), 2f)
+            { DashStyle = DashStyle.Dash, StartCap = LineCap.Round, EndCap = LineCap.Round };
+        int[] widths = { 36, 44, 34, 40 };
+        for (int i = 0; i < widths.Length; i++)
+        {
+            int y = top + 10 + i * 11;
+            g.DrawLine(pen, cx - widths[i] / 2, y, cx + widths[i] / 2, y);
+        }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -215,6 +424,9 @@ public sealed class MediaPanel : UserControl
         {
             _clockTimer.Stop();
             _clockTimer.Dispose();
+            _weatherTimer?.Stop();
+            _weatherTimer?.Dispose();
+            _weatherSvc?.Dispose();
             _thumbScaled?.Dispose();
         }
         base.Dispose(disposing);

@@ -73,6 +73,7 @@ public sealed class SettingsDialog : Form
         MaximizeBox     = false;
         MinimizeBox     = false;
         ShowInTaskbar   = false;
+        Load           += (_, _) => AppTheme.ApplyDarkTitleBar(Handle);
 
         // ── Tab buttons ───────────────────────────────────────────────────────
         string[] labels = { "GENERAL", "WEATHER", "DISCORD", "ANYTHING LLM", "CHATGPT", "HOME ASSISTANT", "CALENDAR" };
@@ -820,8 +821,8 @@ public sealed class SettingsDialog : Form
 
         var layoutRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(DlgW, 26) };
         _rbLayoutAuto  = MakeRadioButton("Auto-detect",   layoutRow, FieldX,       0);
-        _rbLayout1920  = MakeRadioButton("1920 × 720",    layoutRow, FieldX + 120, 0);
-        _rbLayout2560  = MakeRadioButton("2560 × 720",    layoutRow, FieldX + 260, 0);
+        _rbLayout1920  = MakeRadioButton("1920 × 720",    layoutRow, FieldX + 150, 0);
+        _rbLayout2560  = MakeRadioButton("2560 × 720",    layoutRow, FieldX + 310, 0);
         _rbLayoutAuto.Checked = true;
         scroll.Controls.Add(layoutRow);
         y += 26;
