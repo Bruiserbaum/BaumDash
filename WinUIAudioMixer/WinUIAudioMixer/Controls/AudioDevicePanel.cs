@@ -12,118 +12,93 @@ public sealed class AudioDevicePanel : UserControl
 {
     private readonly AudioDeviceService _deviceService;
     private List<OutputDevice> _outputDevices = new();
+    private int _currentDeviceIndex;
 
-    // Mic
+    // Mic (arrow selector + mute)
+    private List<OutputDevice> _micDevices = new();
+    private int _currentMicIndex;
+    private readonly Button _micPrevBtn;
+    private readonly Button _micNextBtn;
     private readonly Label  _micNameLabel;
     private readonly Button _micMuteButton;
     private IAudioEndpointVolume? _micEpVol;
     private bool _micMuted;
 
-    // Speaker
-    private readonly ComboBox   _speakerCombo;
+    // Speaker (arrow selector + mute)
+    private readonly Button _speakerPrevBtn;
+    private readonly Button _speakerNextBtn;
+    private readonly Label  _speakerNameLabel;
+    private readonly Button _speakerMuteButton;
     private readonly DarkSlider _masterSlider;
     private readonly Label      _masterPctLabel;
     private IAudioEndpointVolume? _speakerEpVol;
-    private bool _updatingCombo;
+    private bool _speakerMuted;
 
-    // AMD instant replay
-    private readonly Button _amdReplayButton;
-
-    // Home Assistant
-    private readonly HomeAssistantService?              _haSvc;
-    private readonly List<Label>                          _haSensorLabels   = new();
-    private readonly List<(Button btn, string entityId)>  _haLightButtons   = new();
-    private readonly List<(Button btn, string entityId)>  _haSwitchButtons  = new();
-    private readonly System.Windows.Forms.Timer?        _haTimer;
-    private bool _haConnected;
+    // Instant replay (AMD or Nvidia depending on config)
+    private readonly Button _replayButton;
+    private Action _replayAction = NativeMethods.SaveAmdReplay;
+    private string _replayLabel  = "AMD Instant Replay";
 
     // Periodic volume sync
     private readonly System.Windows.Forms.Timer _volumeTimer;
     private bool _timerUpdating;
 
-    public AudioDevicePanel(AudioDeviceService deviceService, HomeAssistantService? haSvc = null)
+    // Larger fonts for this panel only
+    private static readonly Font _fSmall   = new("Segoe UI", 13f, FontStyle.Regular);
+    private static readonly Font _fControl = new("Segoe UI", 14f, FontStyle.Regular);
+    private static readonly Font _fButton  = new("Segoe UI", 13f, FontStyle.Bold);
+
+    public AudioDevicePanel(AudioDeviceService deviceService)
     {
         _deviceService = deviceService;
-        _haSvc         = haSvc;
         BackColor = AppTheme.BgPanel;
         SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint, true);
 
-        _micNameLabel = MakeLabel("…", AppTheme.TextPrimary, AppTheme.FontLabel);
+        _micPrevBtn      = MakeFlatButton("◀", AppTheme.BgCard);
+        _micPrevBtn.Font = _fButton;
+        _micPrevBtn.Click += (_, _) => StepMic(-1);
 
-        _micMuteButton = MakeFlatButton("MIC ON", AppTheme.Success);
+        _micNameLabel = MakeLabel("…", AppTheme.TextPrimary, _fControl);
+        _micNameLabel.TextAlign = ContentAlignment.MiddleCenter;
+
+        _micNextBtn      = MakeFlatButton("▶", AppTheme.BgCard);
+        _micNextBtn.Font = _fButton;
+        _micNextBtn.Click += (_, _) => StepMic(+1);
+
+        _micMuteButton = MakeFlatButton("MIC ON", AppTheme.Accent);
+        _micMuteButton.Font  = _fButton;
         _micMuteButton.Click += OnMicMuteClick;
 
-        _speakerCombo = new ComboBox
-        {
-            DropDownStyle = ComboBoxStyle.DropDownList,
-            Font          = AppTheme.FontLabel,
-        };
-        _speakerCombo.SelectedIndexChanged += OnSpeakerChanged;
+        _speakerPrevBtn      = MakeFlatButton("◀", AppTheme.BgCard);
+        _speakerPrevBtn.Font = _fButton;
+        _speakerPrevBtn.Click += (_, _) => StepDevice(-1);
+
+        _speakerNameLabel = MakeLabel("", AppTheme.TextPrimary, _fControl);
+        _speakerNameLabel.TextAlign = ContentAlignment.MiddleCenter;
+
+        _speakerNextBtn      = MakeFlatButton("▶", AppTheme.BgCard);
+        _speakerNextBtn.Font = _fButton;
+        _speakerNextBtn.Click += (_, _) => StepDevice(+1);
+
+        _speakerMuteButton = MakeFlatButton("SPEAKER ON", AppTheme.Accent);
+        _speakerMuteButton.Font  = _fButton;
+        _speakerMuteButton.Click += OnSpeakerMuteClick;
 
         _masterSlider   = new DarkSlider { Value = 1f };
-        _masterPctLabel = MakeLabel("100%", AppTheme.TextSecondary, AppTheme.FontSmall);
+        _masterPctLabel = MakeLabel("100%", AppTheme.TextSecondary, _fSmall);
         _masterSlider.ValueChanged += OnMasterVolumeChanged;
 
-        _amdReplayButton = MakeFlatButton("🎬  SAVE AMD REPLAY", Color.FromArgb(180, 0, 0));
-        _amdReplayButton.Click += (_, _) => Task.Run(NativeMethods.SaveAmdReplay);
+        _replayButton      = MakeFlatButton("🎬  SAVE AMD REPLAY", AppTheme.Accent);
+        _replayButton.Font = _fButton;
+        _replayButton.Click += (_, _) => Task.Run(_replayAction);
 
         Controls.AddRange(new Control[]
         {
-            _micNameLabel, _micMuteButton,
-            _speakerCombo,
+            _micPrevBtn, _micNameLabel, _micNextBtn, _micMuteButton,
+            _speakerPrevBtn, _speakerNameLabel, _speakerNextBtn, _speakerMuteButton,
             _masterSlider, _masterPctLabel,
-            _amdReplayButton
+            _replayButton,
         });
-
-        // ── Home Assistant controls (dynamic, based on config) ────────────────
-        if (_haSvc?.IsConfigured == true)
-        {
-            foreach (var sensor in _haSvc.Config.Sensors)
-            {
-                var lbl = MakeLabel($"{sensor.Name}: …", AppTheme.TextPrimary, new Font("Segoe UI", 11f));
-                _haSensorLabels.Add(lbl);
-                Controls.Add(lbl);
-            }
-
-            foreach (var light in _haSvc.Config.Lights)
-            {
-                var btn = MakeFlatButton($"💡  {light.Name.ToUpper()}", AppTheme.BgCard);
-                var eid = light.Id;
-                btn.Click += async (_, _) =>
-                {
-                    try
-                    {
-                        await _haSvc.ToggleLightAsync(eid);
-                        await Task.Delay(400);
-                        await RefreshLightButtonAsync(btn, eid);
-                    }
-                    catch { }
-                };
-                _haLightButtons.Add((btn, eid));
-                Controls.Add(btn);
-            }
-
-            foreach (var sw in _haSvc.Config.Switches)
-            {
-                var btn = MakeFlatButton($"🔌  {sw.Name.ToUpper()}", AppTheme.BgCard);
-                var eid = sw.Id;
-                btn.Click += async (_, _) =>
-                {
-                    try
-                    {
-                        await _haSvc.ToggleSwitchAsync(eid);
-                        await Task.Delay(400);
-                        await RefreshSwitchButtonAsync(btn, eid);
-                    }
-                    catch { }
-                };
-                _haSwitchButtons.Add((btn, eid));
-                Controls.Add(btn);
-            }
-
-            _haTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
-            _haTimer.Tick += OnHaTick;
-        }
 
         _volumeTimer = new System.Windows.Forms.Timer { Interval = 2000 };
         _volumeTimer.Tick += OnVolumeTick;
@@ -134,9 +109,6 @@ public sealed class AudioDevicePanel : UserControl
     protected override void OnHandleCreated(EventArgs e)
     {
         base.OnHandleCreated(e);
-        // Defer COM calls until the WinForms message pump is running.
-        // OnHandleCreated fires during Show(), before Application.Run pumps messages,
-        // so CoCreateInstance fails for audio COM objects at that point.
         BeginInvoke(InitializeAudio);
     }
 
@@ -144,9 +116,34 @@ public sealed class AudioDevicePanel : UserControl
     {
         LoadMic();
         LoadDevices();
+        ApplyGpuPlatformFromConfig();
         LayoutAll();
         _volumeTimer.Start();
-        if (_haTimer != null) { _haTimer.Start(); _ = Task.Run(RefreshHaAsync); }
+    }
+
+    private void ApplyGpuPlatformFromConfig()
+    {
+        try
+        {
+            var path = System.IO.Path.Combine(AppContext.BaseDirectory, "general-config.json");
+            if (!System.IO.File.Exists(path)) return;
+            var cfg = System.Text.Json.JsonSerializer.Deserialize<Models.GeneralConfig>(
+                System.IO.File.ReadAllText(path),
+                new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            if (cfg == null) return;
+            ApplyGpuPlatform(cfg.GpuPlatform);
+        }
+        catch { }
+    }
+
+    /// <summary>Call with "amd" or "nvidia" to switch the replay button label and hotkey.</summary>
+    public void ApplyGpuPlatform(string platform)
+    {
+        bool nvidia = platform.Equals("nvidia", StringComparison.OrdinalIgnoreCase);
+        _replayAction = nvidia ? NativeMethods.SaveNvidiaReplay : NativeMethods.SaveAmdReplay;
+        _replayLabel  = nvidia ? "NVIDIA Instant Replay" : "AMD Instant Replay";
+        _replayButton.Text = nvidia ? "🎬  SAVE NVIDIA CLIP" : "🎬  SAVE AMD REPLAY";
+        Invalidate();
     }
 
     protected override void OnResize(EventArgs e)
@@ -162,29 +159,32 @@ public sealed class AudioDevicePanel : UserControl
         if (ClientSize.Width < 10) return;
         int x = 16, w = ClientSize.Width - 32;
 
-        _micNameLabel    .SetBounds(x,          58,  w,      20);
-        _micMuteButton   .SetBounds(x,          82,  w,      36);
-        _speakerCombo    .SetBounds(x,         162,  w,       0);  // height auto for combo
-        _masterSlider    .SetBounds(x,         220,  w - 44, 28);
-        _masterPctLabel  .SetBounds(x + w - 42, 220, 42,     28);
-        _amdReplayButton .SetBounds(x,         294,  w,      36);
+        // Mic section: header y=18, sep y=50, label y=58
+        // Selector y=88, mute y=140
+        _micPrevBtn      .SetBounds(x,           88,  44,      44);
+        _micNameLabel    .SetBounds(x + 48,      88,  w - 96,  44);
+        _micNextBtn      .SetBounds(x + w - 44,  88,  44,      44);
+        _micMuteButton   .SetBounds(x,          140,  w,       44);
 
-        // ── Home Assistant ─────────────────────────────────────────────────────
-        // Section header drawn in OnPaint at y=342/348; controls start at y=366
-        const int HaTop = 366;
-        for (int i = 0; i < _haSensorLabels.Count; i++)
-            _haSensorLabels[i].SetBounds(x, HaTop + i * 26, w, 24);
+        // Speaker section: sep y=196, label y=204
+        // Selector y=234, mute y=286
+        _speakerPrevBtn  .SetBounds(x,          234,  44,      44);
+        _speakerNameLabel.SetBounds(x + 48,     234,  w - 96,  44);
+        _speakerNextBtn  .SetBounds(x + w - 44, 234,  44,      44);
+        _speakerMuteButton.SetBounds(x,         286,  w,       44);
 
-        int lightTop = HaTop + _haSensorLabels.Count * 26 + (_haSensorLabels.Count > 0 ? 8 : 0);
-        for (int i = 0; i < _haLightButtons.Count; i++)
-            _haLightButtons[i].btn.SetBounds(x, lightTop + i * 44, w, 36);
+        // Master volume: label y=342, slider y=366
+        _masterSlider    .SetBounds(x,          366,  w - 56,  34);
+        _masterPctLabel  .SetBounds(x + w - 54, 364,  54,      36);
 
-        int switchTop = lightTop + _haLightButtons.Count * 44 + (_haLightButtons.Count > 0 ? 8 : 0);
-        for (int i = 0; i < _haSwitchButtons.Count; i++)
-            _haSwitchButtons[i].btn.SetBounds(x, switchTop + i * 44, w, 36);
+        // Replay section: sep y=416, label y=424, button y=454
+        _replayButton    .SetBounds(x,          454,  w,       44);
     }
 
     // ── Painting ──────────────────────────────────────────────────────────────
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+        => AppTheme.PaintBackground(e.Graphics, this, AppTheme.BgPanel);
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -196,63 +196,125 @@ public sealed class AudioDevicePanel : UserControl
         using var sub   = new SolidBrush(AppTheme.TextSecondary);
         using var sep   = new Pen(AppTheme.Border);
 
-        g.DrawString("AUDIO DEVICES",  AppTheme.FontSectionHeader, muted, x, 14);
-        g.DrawLine(sep, x, 36, x + w, 36);
+        g.DrawString("AUDIO DEVICES",  AppTheme.FontPanelHeader, muted, x, 18);
+        g.DrawLine(sep, x, 50, x + w, 50);
 
-        g.DrawString("Microphone",     AppTheme.FontBold, sub, x, 42);
-        g.DrawLine(sep, x, 130, x + w, 130);
+        g.DrawString("Microphone",     AppTheme.FontPanelSub, sub, x, 58);
+        g.DrawLine(sep, x, 196, x + w, 196);
 
-        g.DrawString("Speaker Output", AppTheme.FontBold, sub, x, 138);
-        g.DrawString("Master Volume",  AppTheme.FontSmall, muted, x, 200);
-        g.DrawLine(sep, x, 268, x + w, 268);
-        g.DrawString("AMD Instant Replay", AppTheme.FontBold, sub, x, 274);
-
-        if (_haSvc?.IsConfigured == true)
-        {
-            g.DrawLine(sep, x, 338, x + w, 338);
-            g.DrawString("HOME ASSISTANT", AppTheme.FontSectionHeader, muted, x, 344);
-            var dotColor = _haConnected ? AppTheme.Success : AppTheme.TextMuted;
-            using var dotBrush = new SolidBrush(dotColor);
-            g.FillEllipse(dotBrush, x + 120, 346, 8, 8);
-        }
+        g.DrawString("Speaker Output", AppTheme.FontPanelSub, sub, x, 204);
+        g.DrawString("Master Volume",  _fSmall, muted, x, 342);
+        g.DrawLine(sep, x, 416, x + w, 416);
+        g.DrawString(_replayLabel,     AppTheme.FontPanelSub, sub, x, 424);
     }
 
     // ── Data loading ──────────────────────────────────────────────────────────
 
     public void LoadDevices()
     {
-        _updatingCombo = true;
         try
         {
             _outputDevices = _deviceService.GetOutputDevices().ToList();
 
-            _speakerCombo.Items.Clear();
             if (_outputDevices.Count == 0)
             {
-                _speakerCombo.Items.Add("No output devices");
-                _speakerCombo.SelectedIndex = 0;
+                _speakerNameLabel.Text  = "No output devices";
+                _speakerPrevBtn.Enabled = false;
+                _speakerNextBtn.Enabled = false;
                 return;
             }
 
-            foreach (var d in _outputDevices)
-                _speakerCombo.Items.Add(d.Name);
-
             int def = _outputDevices.FindIndex(d => d.IsDefault);
-            _speakerCombo.SelectedIndex = def >= 0 ? def : 0;
-
-            var selId = _outputDevices[_speakerCombo.SelectedIndex].Id;
-            RefreshSpeakerVolume(selId);
+            _currentDeviceIndex = def >= 0 ? def : 0;
+            UpdateSpeakerLabel();
+            RefreshSpeakerVolume(_outputDevices[_currentDeviceIndex].Id);
         }
         catch (Exception ex)
         {
-            _speakerCombo.Items.Clear();
-            _speakerCombo.Items.Add($"Err: {ex.GetType().Name}: {ex.Message}");
-            _speakerCombo.SelectedIndex = 0;
+            _speakerNameLabel.Text  = $"Error: {ex.GetType().Name}";
+            _speakerPrevBtn.Enabled = false;
+            _speakerNextBtn.Enabled = false;
         }
-        finally
+    }
+
+    private void StepDevice(int delta)
+    {
+        if (_outputDevices.Count == 0) return;
+        _currentDeviceIndex = (_currentDeviceIndex + delta + _outputDevices.Count) % _outputDevices.Count;
+        UpdateSpeakerLabel();
+        try
         {
-            _updatingCombo = false;
+            _deviceService.SetDefaultDevice(_outputDevices[_currentDeviceIndex].Id);
+            RefreshSpeakerVolume(_outputDevices[_currentDeviceIndex].Id);
         }
+        catch { }
+    }
+
+    private void UpdateSpeakerLabel()
+    {
+        if (_outputDevices.Count == 0) return;
+        _speakerNameLabel.Text = _outputDevices[_currentDeviceIndex].Name;
+    }
+
+    public void LoadMic()
+    {
+        try
+        {
+            _micDevices = _deviceService.GetInputDevices().ToList();
+
+            if (_micDevices.Count == 0)
+            {
+                _micNameLabel.Text  = "No microphone";
+                _micPrevBtn.Enabled = false;
+                _micNextBtn.Enabled = false;
+                return;
+            }
+
+            int def = _micDevices.FindIndex(d => d.IsDefault);
+            _currentMicIndex = def >= 0 ? def : 0;
+            _micNameLabel.Text = _micDevices[_currentMicIndex].Name;
+
+            RefreshMicVolume(_micDevices[_currentMicIndex].Id);
+        }
+        catch
+        {
+            _micNameLabel.Text = "No microphone";
+        }
+    }
+
+    private void RefreshMicVolume(string deviceId)
+    {
+        try
+        {
+            MarshalHelpers.ReleaseComObject(_micEpVol);
+            _micEpVol = null;
+
+            var en = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+            en.GetDevice(deviceId, out var device);
+            MarshalHelpers.ReleaseComObject(en);
+
+            var iid = typeof(IAudioEndpointVolume).GUID;
+            device.Activate(ref iid, CLSCTX.InprocServer, IntPtr.Zero, out var volObj);
+            MarshalHelpers.ReleaseComObject(device);
+
+            _micEpVol = (IAudioEndpointVolume)volObj;
+            _micEpVol.GetMute(out _micMuted);
+            UpdateMicButton();
+        }
+        catch { }
+    }
+
+    private void StepMic(int delta)
+    {
+        if (_micDevices.Count == 0) return;
+        _currentMicIndex = (_currentMicIndex + delta + _micDevices.Count) % _micDevices.Count;
+        _micNameLabel.Text = _micDevices[_currentMicIndex].Name;
+        try
+        {
+            _deviceService.SetDefaultDevice(_micDevices[_currentMicIndex].Id);
+            RefreshMicVolume(_micDevices[_currentMicIndex].Id);
+        }
+        catch { }
     }
 
     private void RefreshSpeakerVolume(string? deviceId)
@@ -275,41 +337,10 @@ public sealed class AudioDevicePanel : UserControl
             _speakerEpVol.GetMasterVolumeLevelScalar(out var vol);
             _masterSlider.Value  = vol;
             _masterPctLabel.Text = $"{(int)(vol * 100)}%";
+            _speakerEpVol.GetMute(out _speakerMuted);
+            UpdateSpeakerMuteButton();
         }
         catch { }
-    }
-
-    public void LoadMic()
-    {
-        try
-        {
-            MarshalHelpers.ReleaseComObject(_micEpVol);
-            _micEpVol = null;
-
-            var en = (IMMDeviceEnumerator)new MMDeviceEnumerator();
-            en.GetDefaultAudioEndpoint(EDataFlow.Capture, ERole.Communications, out var device);
-            MarshalHelpers.ReleaseComObject(en);
-
-            const int StgmRead = 0;
-            device.OpenPropertyStore(StgmRead, out var store);
-            var key = PropertyKeys.PkeyDeviceFriendlyName;
-            store.GetValue(ref key, out var prop);
-            _micNameLabel.Text = prop.GetString() ?? "Unknown Mic";
-            prop.Dispose();
-            MarshalHelpers.ReleaseComObject(store);
-
-            var iid = typeof(IAudioEndpointVolume).GUID;
-            device.Activate(ref iid, CLSCTX.InprocServer, IntPtr.Zero, out var volObj);
-            MarshalHelpers.ReleaseComObject(device);
-
-            _micEpVol = (IAudioEndpointVolume)volObj;
-            _micEpVol.GetMute(out _micMuted);
-            UpdateMicButton();
-        }
-        catch
-        {
-            _micNameLabel.Text = "No microphone";
-        }
     }
 
     // ── Event handlers ────────────────────────────────────────────────────────
@@ -329,21 +360,31 @@ public sealed class AudioDevicePanel : UserControl
     private void UpdateMicButton()
     {
         _micMuteButton.Text      = _micMuted ? "  MIC MUTED"  : "  MIC ACTIVE";
-        _micMuteButton.BackColor = _micMuted ? AppTheme.Danger : AppTheme.Success;
-        _micMuteButton.ForeColor = Color.White;
+        _micMuteButton.BackColor = _micMuted ? AppTheme.BgCard : AppTheme.Accent;
+        _micMuteButton.ForeColor = _micMuted ? AppTheme.TextMuted : Color.White;
+        _micMuteButton.FlatAppearance.MouseOverBackColor =
+            _micMuted ? AppTheme.BgPanel : AppTheme.AccentHover;
     }
 
-    private void OnSpeakerChanged(object? sender, EventArgs e)
+    private void OnSpeakerMuteClick(object? sender, EventArgs e)
     {
-        if (_updatingCombo) return;
-        int idx = _speakerCombo.SelectedIndex;
-        if (idx < 0 || idx >= _outputDevices.Count) return;
         try
         {
-            _deviceService.SetDefaultDevice(_outputDevices[idx].Id);
-            RefreshSpeakerVolume(_outputDevices[idx].Id);
+            _speakerMuted = !_speakerMuted;
+            var ctx = Guid.Empty;
+            _speakerEpVol?.SetMute(_speakerMuted, ref ctx);
+            UpdateSpeakerMuteButton();
         }
         catch { }
+    }
+
+    private void UpdateSpeakerMuteButton()
+    {
+        _speakerMuteButton.Text      = _speakerMuted ? "  SPEAKER MUTED" : "  SPEAKER ON";
+        _speakerMuteButton.BackColor = _speakerMuted ? AppTheme.BgCard : AppTheme.Accent;
+        _speakerMuteButton.ForeColor = _speakerMuted ? AppTheme.TextMuted : Color.White;
+        _speakerMuteButton.FlatAppearance.MouseOverBackColor =
+            _speakerMuted ? AppTheme.BgPanel : AppTheme.AccentHover;
     }
 
     private void OnMasterVolumeChanged(object? sender, EventArgs e)
@@ -372,6 +413,12 @@ public sealed class AudioDevicePanel : UserControl
                     _masterSlider.Value  = vol;
                     _masterPctLabel.Text = $"{(int)(vol * 100)}%";
                 }
+                _speakerEpVol.GetMute(out var spkMuted);
+                if (spkMuted != _speakerMuted)
+                {
+                    _speakerMuted = spkMuted;
+                    UpdateSpeakerMuteButton();
+                }
             }
             if (_micEpVol != null)
             {
@@ -388,66 +435,6 @@ public sealed class AudioDevicePanel : UserControl
         {
             _timerUpdating = false;
         }
-    }
-
-    // ── Home Assistant ────────────────────────────────────────────────────────
-
-    private void OnHaTick(object? sender, EventArgs e) => _ = Task.Run(RefreshHaAsync);
-
-    private async Task RefreshHaAsync()
-    {
-        if (_haSvc == null) return;
-        bool anySuccess = false;
-
-        for (int i = 0; i < _haSvc.Config.Sensors.Count && i < _haSensorLabels.Count; i++)
-        {
-            var (state, unit) = await _haSvc.GetSensorAsync(_haSvc.Config.Sensors[i].Id);
-            if (state != "?") anySuccess = true;
-            var name = _haSvc.Config.Sensors[i].Name;
-            var text = state == "?" ? $"{name}: –" : $"{name}: {state}{unit}";
-            var lbl  = _haSensorLabels[i];
-            if (lbl.InvokeRequired) lbl.BeginInvoke(() => lbl.Text = text);
-            else                    lbl.Text = text;
-        }
-
-        for (int i = 0; i < _haLightButtons.Count; i++)
-        {
-            var (btn, eid) = _haLightButtons[i];
-            await RefreshLightButtonAsync(btn, eid);
-            anySuccess = true;
-        }
-
-        for (int i = 0; i < _haSwitchButtons.Count; i++)
-        {
-            var (btn, eid) = _haSwitchButtons[i];
-            await RefreshSwitchButtonAsync(btn, eid);
-            anySuccess = true;
-        }
-
-        if (_haConnected != anySuccess)
-        {
-            _haConnected = anySuccess;
-            if (InvokeRequired) BeginInvoke(Invalidate);
-            else                Invalidate();
-        }
-    }
-
-    private async Task RefreshLightButtonAsync(Button btn, string entityId)
-    {
-        if (_haSvc == null) return;
-        var isOn = await _haSvc.GetLightStateAsync(entityId);
-        var color = isOn ? AppTheme.Accent : AppTheme.BgCard;
-        if (btn.InvokeRequired) btn.BeginInvoke(() => btn.BackColor = color);
-        else                    btn.BackColor = color;
-    }
-
-    private async Task RefreshSwitchButtonAsync(Button btn, string entityId)
-    {
-        if (_haSvc == null) return;
-        var isOn = await _haSvc.GetSwitchStateAsync(entityId);
-        var color = isOn ? AppTheme.Accent : AppTheme.BgCard;
-        if (btn.InvokeRequired) btn.BeginInvoke(() => btn.BackColor = color);
-        else                    btn.BackColor = color;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -480,8 +467,6 @@ public sealed class AudioDevicePanel : UserControl
         {
             _volumeTimer.Stop();
             _volumeTimer.Dispose();
-            _haTimer?.Stop();
-            _haTimer?.Dispose();
             MarshalHelpers.ReleaseComObject(_micEpVol);
             MarshalHelpers.ReleaseComObject(_speakerEpVol);
         }
