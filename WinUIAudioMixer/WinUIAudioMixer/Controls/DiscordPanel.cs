@@ -1357,13 +1357,23 @@ internal sealed class MemberRowPanel : Panel
         var g = e.Graphics;
         g.SmoothingMode = SmoothingMode.AntiAlias;
 
+        // Green row highlight when speaking
+        if (_member.IsSpeaking)
+        {
+            using var glow = new SolidBrush(Color.FromArgb(35, AppTheme.Success.R, AppTheme.Success.G, AppTheme.Success.B));
+            g.FillRectangle(glow, 0, 0, Width, Height);
+        }
+
         var dotColor = _member.IsMuted    ? AppTheme.Danger
                      : _member.IsSpeaking ? AppTheme.Success
                      : AppTheme.TextMuted;
         using var dotBrush = new SolidBrush(dotColor);
         g.FillEllipse(dotBrush, 4, (Height - 10) / 2, 10, 10);
 
-        using var nameBrush = new SolidBrush(_member.IsMuted ? AppTheme.TextMuted : AppTheme.TextPrimary);
+        var nameColor = _member.IsSpeaking ? AppTheme.Success
+                      : _member.IsMuted    ? AppTheme.TextMuted
+                      : AppTheme.TextPrimary;
+        using var nameBrush = new SolidBrush(nameColor);
         g.DrawString(_member.DisplayName, AppTheme.FontLabel, nameBrush, 20, (Height - 16) / 2);
 
         if (_member.IsStreaming)

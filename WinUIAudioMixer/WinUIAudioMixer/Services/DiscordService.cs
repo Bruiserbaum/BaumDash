@@ -219,6 +219,35 @@ public sealed class DiscordService : IDisposable
         await TrySubscribeAsync("NOTIFICATION_CREATE",  new JsonObject());
         await TrySubscribeAsync("VOICE_SETTINGS_UPDATE", new JsonObject());
         await TrySubscribeAsync("VOICE_CHANNEL_SELECT",  new JsonObject());
+        await SubscribeToGuildTextChannelsAsync();
+    }
+
+    /// <summary>
+    /// Subscribe to MESSAGE_CREATE for all text/announcement channels in every known guild.
+    /// Requires the messages.read OAuth scope to have been granted.
+    /// </summary>
+    private async Task SubscribeToGuildTextChannelsAsync()
+    {
+        foreach (var guildId in _guildNames.Keys)
+        {
+            try
+            {
+                var data     = await SendCommandAsync("GET_CHANNELS", new JsonObject { ["guild_id"] = guildId });
+                var channels = data?["channels"]?.AsArray();
+                if (channels == null) continue;
+                foreach (var ch in channels)
+                {
+                    var type = ch?["type"]?.GetValue<int>() ?? -1;
+                    // 0 = GUILD_TEXT, 5 = GUILD_ANNOUNCEMENT — skip voice/stage/forum/etc.
+                    if (type != 0 && type != 5) continue;
+                    var chId = ch?["id"]?.GetValue<string>();
+                    if (string.IsNullOrEmpty(chId)) continue;
+                    _channelGuildCache[chId] = guildId;
+                    await TrySubscribeAsync("MESSAGE_CREATE", new JsonObject { ["channel_id"] = chId });
+                }
+            }
+            catch { }
+        }
     }
 
     // ── OAuth authentication ──────────────────────────────────────────────────
