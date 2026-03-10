@@ -35,7 +35,11 @@ public sealed class SettingsDialog : Form
     // Appearance
     private RadioButton? _rbDark, _rbLight, _rbCustom;
     private Button?      _btnAccentPicker;
-    private Color        _customAccent = AppTheme.Accent;
+    private Color        _customAccent = AppTheme.DefaultAccent;
+
+    // Discord tab visibility
+    private static readonly string[] DiscordTabNames = { "Discord", "AI Chat", "ChatGPT", "PC Perf", "Calendar", "Home Asst", "Apps" };
+    private CheckBox[]? _discordTabCheckboxes;
     private TextBox?     _bgPathBox;
     private ComboBox?    _bgModeCombo;
     private TrackBar?    _bgAlphaSlider;
@@ -878,17 +882,36 @@ public sealed class SettingsDialog : Form
             }
         };
 
+        var btnResetAccent = new Button
+        {
+            Text      = "Reset",
+            Font      = AppTheme.FontSmall,
+            ForeColor = AppTheme.TextPrimary,
+            BackColor = AppTheme.BgCard,
+            FlatStyle = FlatStyle.Flat,
+            Size      = new Size(46, 22),
+            Location  = new Point(140, 4),
+            Cursor    = Cursors.Hand,
+            FlatAppearance = { BorderSize = 1, BorderColor = AppTheme.Border,
+                               MouseOverBackColor = AppTheme.BgPanel },
+        };
+        btnResetAccent.Click += (_, _) =>
+        {
+            _customAccent = AppTheme.DefaultAccent;
+            if (_btnAccentPicker != null) _btnAccentPicker.BackColor = _customAccent;
+        };
+
         var accentHexLbl = new Label
         {
-            Text      = "  Pick a custom accent colour (used with Custom theme)",
+            Text      = "  Pick accent colour (Custom theme only). Reset = default blue.",
             Font      = AppTheme.FontSmall,
             ForeColor = AppTheme.TextMuted,
             BackColor = Color.Transparent,
             AutoSize  = true,
-            Location  = new Point(140, 8),
+            Location  = new Point(192, 8),
         };
 
-        accentRow.Controls.AddRange(new Control[] { accentLbl, _btnAccentPicker, accentHexLbl });
+        accentRow.Controls.AddRange(new Control[] { accentLbl, _btnAccentPicker, btnResetAccent, accentHexLbl });
         scroll.Controls.Add(accentRow);
         y += 28;
 
@@ -904,6 +927,38 @@ public sealed class SettingsDialog : Form
         UpdateAccentRowEnabled();
 
         AddHint(scroll, "Restart BaumDash after saving to apply theme changes.", ref y, 22);
+
+        // ── Discord Panel Tabs ────────────────────────────────────────────────
+        y += 2;
+        AddSectionLabel(scroll, "DISCORD PANEL TABS  (uncheck to hide)", ref y);
+
+        _discordTabCheckboxes = new CheckBox[DiscordTabNames.Length];
+        // Row 1: first 4 tabs; Row 2: last 3 tabs
+        int tabRow1Y = y;
+        int tabRow2Y = y + 26;
+        int[] row1Cols = { 0, 1, 2, 3 };
+        int[] row2Cols = { 4, 5, 6 };
+        int colW = (FieldW - FieldX) / 4;
+
+        for (int i = 0; i < DiscordTabNames.Length; i++)
+        {
+            int col = i < 4 ? i : i - 4;
+            int rowY = i < 4 ? tabRow1Y : tabRow2Y;
+            var chk = new CheckBox
+            {
+                Text      = DiscordTabNames[i],
+                Checked   = true,
+                Font      = AppTheme.FontLabel,
+                ForeColor = AppTheme.TextPrimary,
+                BackColor = Color.Transparent,
+                Location  = new Point(FieldX + col * colW, rowY),
+                Size      = new Size(colW, 22),
+                Cursor    = Cursors.Hand,
+            };
+            _discordTabCheckboxes[i] = chk;
+            scroll.Controls.Add(chk);
+        }
+        y = tabRow2Y + 26;
 
         // ── Background Image ──────────────────────────────────────────────────
         y += 2;
@@ -1265,6 +1320,13 @@ public sealed class SettingsDialog : Form
                         case "2560": if (_rbLayout2560 != null) _rbLayout2560.Checked = true; break;
                         default:     if (_rbLayoutAuto != null) _rbLayoutAuto.Checked = true; break;
                     }
+
+                    if (_discordTabCheckboxes != null)
+                    {
+                        var hidden = cfg.HiddenDiscordTabs ?? new List<string>();
+                        for (int i = 0; i < DiscordTabNames.Length; i++)
+                            _discordTabCheckboxes[i].Checked = !hidden.Contains(DiscordTabNames[i]);
+                    }
                 }
             }
             else
@@ -1360,17 +1422,26 @@ public sealed class SettingsDialog : Form
                                : (_rbLayout2560?.Checked == true) ? "2560"
                                : "auto";
 
+            var hiddenTabs = new List<string>();
+            if (_discordTabCheckboxes != null)
+            {
+                for (int i = 0; i < DiscordTabNames.Length; i++)
+                    if (!_discordTabCheckboxes[i].Checked)
+                        hiddenTabs.Add(DiscordTabNames[i]);
+            }
+
             File.WriteAllText(Path.Combine(dir, "general-config.json"),
                 JsonSerializer.Serialize(new WinUIAudioMixer.Models.GeneralConfig
                 {
-                    CloseToTray     = _chkCloseToTray.Checked,
-                    Theme           = theme,
-                    CustomAccentHex = accentHx,
-                    BgImagePath     = bgPath,
-                    BgImageMode     = bgMode,
-                    BgOverlayAlpha  = alpha,
-                    GpuPlatform     = gpuPlat,
-                    LayoutProfile   = layoutProf,
+                    CloseToTray       = _chkCloseToTray.Checked,
+                    Theme             = theme,
+                    CustomAccentHex   = accentHx,
+                    BgImagePath       = bgPath,
+                    BgImageMode       = bgMode,
+                    BgOverlayAlpha    = alpha,
+                    GpuPlatform       = gpuPlat,
+                    LayoutProfile     = layoutProf,
+                    HiddenDiscordTabs = hiddenTabs,
                 }, opts));
 
             // Startup

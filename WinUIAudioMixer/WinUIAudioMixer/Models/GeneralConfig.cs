@@ -17,4 +17,6 @@ public sealed class GeneralConfig
     public string GpuPlatform     { get; set; } = "amd";
     /// <summary>auto / 1920 / 2560 — panel column widths and target form width.</summary>
     public string LayoutProfile   { get; set; } = "auto";
+    /// <summary>Tab names hidden in the Discord panel (e.g. ["AI Chat","PC Perf"]).</summary>
+    public List<string> HiddenDiscordTabs { get; set; } = new();
 }

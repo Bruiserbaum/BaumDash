@@ -14,6 +14,8 @@ public sealed class AppSessionRow : UserControl
     private readonly Label _pctLabel;
     private readonly PictureBox _iconBox;
 
+    public string SessionName => _session.DisplayName;
+
     public AppSessionRow(AudioSessionItem session)
     {
         _session = session;

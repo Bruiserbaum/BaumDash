@@ -86,8 +86,8 @@ public sealed class DiscordPanel : UserControl
     private readonly AppShortcutsPanel _appsPanel;
 
     // Layout constants
-    private const int TabBarH     = 48;
-    private const int VoiceListY  = 108 + TabBarH;             // 148
+    private const int TabBarH     = 54;
+    private const int VoiceListY  = 108 + TabBarH;             // 162
     private const int VoiceListH  = 200;
     private const int ChatHeaderY = VoiceListY + VoiceListH + 8; // 356
     private const int ChatY       = ChatHeaderY + 24;            // 380
@@ -302,14 +302,19 @@ public sealed class DiscordPanel : UserControl
         int x  = 16;
         int cw = w - 32;
 
-        // Tab buttons
-        _tabDiscord .SetBounds(x,        8, 84, 32);
-        _tabAi      .SetBounds(x + 90,   8, 80, 32);
-        _tabChatGpt .SetBounds(x + 176,  8, 84, 32);
-        _tabPc      .SetBounds(x + 266,  8, 80, 32);
-        _tabCalendar.SetBounds(x + 352,  8, 90, 32);
-        _tabHa      .SetBounds(x + 448,  8, 102, 32);
-        _tabApps    .SetBounds(x + 556,  8, 62, 32);
+        // Tab buttons — only position visible tabs (hidden ones are suppressed)
+        {
+            int tx = x;
+            var tabDefs = new (Button btn, int width)[]
+            {
+                (_tabDiscord,  84), (_tabAi,      80), (_tabChatGpt, 84),
+                (_tabPc,       80), (_tabCalendar, 90), (_tabHa,     102), (_tabApps, 62),
+            };
+            foreach (var (btn, bw) in tabDefs)
+            {
+                if (btn.Visible) { btn.SetBounds(tx, 8, bw, 38); tx += bw + 6; }
+            }
+        }
 
         // Discord controls
         _statusLabel   .SetBounds(x, TabBarH + 6,  cw, 20);
@@ -1254,6 +1259,37 @@ public sealed class DiscordPanel : UserControl
         if (!File.Exists(path)) return null;
         var id = File.ReadAllText(path).Trim();
         return string.IsNullOrEmpty(id) ? null : id;
+    }
+
+    /// <summary>
+    /// Shows/hides Discord panel tabs based on the supplied list of names to hide.
+    /// Tab names: "Discord", "AI Chat", "ChatGPT", "PC Perf", "Calendar", "Home Asst", "Apps"
+    /// </summary>
+    public void ApplyTabVisibility(IReadOnlyList<string> hiddenTabs)
+    {
+        var map = new (string name, Button btn, ActiveTab tab)[]
+        {
+            ("Discord",   _tabDiscord,  ActiveTab.Discord),
+            ("AI Chat",   _tabAi,       ActiveTab.Ai),
+            ("ChatGPT",   _tabChatGpt,  ActiveTab.ChatGpt),
+            ("PC Perf",   _tabPc,       ActiveTab.Pc),
+            ("Calendar",  _tabCalendar, ActiveTab.Calendar),
+            ("Home Asst", _tabHa,       ActiveTab.Ha),
+            ("Apps",      _tabApps,     ActiveTab.Apps),
+        };
+
+        foreach (var (name, btn, _) in map)
+            btn.Visible = !hiddenTabs.Contains(name);
+
+        // If the active tab was hidden, switch to the first visible tab
+        var current = map.FirstOrDefault(m => m.tab == _activeTab);
+        if (current != default && !current.btn.Visible)
+        {
+            var first = map.FirstOrDefault(m => m.btn.Visible);
+            if (first != default) SwitchTab(first.tab);
+        }
+
+        LayoutAll();
     }
 
     private static Button MakeTabButton(string text, bool active) =>

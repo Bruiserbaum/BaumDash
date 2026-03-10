@@ -280,7 +280,7 @@ public sealed class DiscordService : IDisposable
             var authorizeData = await SendCommandAsync("AUTHORIZE", new JsonObject
             {
                 ["client_id"] = _clientId,
-                ["scopes"]    = new JsonArray("rpc", "rpc.voice.read", "rpc.voice.write"),
+                ["scopes"]    = new JsonArray("rpc", "rpc.voice.read", "rpc.voice.write", "messages.read"),
             }, timeoutMs: 60_000);
             log.AppendLine($"  AUTHORIZE response: {authorizeData?.ToJsonString() ?? "null (timed out or error)"}");
 

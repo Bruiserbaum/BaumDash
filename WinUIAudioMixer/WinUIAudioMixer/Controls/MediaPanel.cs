@@ -200,7 +200,7 @@ public sealed class MediaPanel : UserControl
         // ── Track info ────────────────────────────────────────────────────────
         int infoY = ty + thumbSize + 14;
         var titleFmt  = new StringFormat { Alignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
-        var artistFmt = new StringFormat { Alignment = StringAlignment.Center };
+        var artistFmt = new StringFormat { Alignment = StringAlignment.Center, Trimming = StringTrimming.EllipsisCharacter };
 
         using var titleBrush  = new SolidBrush(_current.HasSession ? AppTheme.TextPrimary : AppTheme.TextMuted);
         using var artistBrush = new SolidBrush(AppTheme.TextSecondary);
@@ -209,7 +209,7 @@ public sealed class MediaPanel : UserControl
         string artist = _current.HasSession ? (string.IsNullOrWhiteSpace(_current.Artist) ? ""                 : _current.Artist) : "";
 
         var titleRect  = new RectangleF(16, infoY,      ClientSize.Width - 32, 24);
-        var artistRect = new RectangleF(16, infoY + 26, ClientSize.Width - 32, 20);
+        var artistRect = new RectangleF(16, infoY + 28, ClientSize.Width - 32, 26);
 
         g.DrawString(title,  AppTheme.FontMedia,    titleBrush,  titleRect,  titleFmt);
         g.DrawString(artist, AppTheme.FontMediaSub, artistBrush, artistRect, artistFmt);

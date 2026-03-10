@@ -130,6 +130,56 @@ public sealed class AudioDeviceService
             .ToList();
     }
 
+    public IReadOnlyList<OutputDevice> GetInputDevices()
+    {
+        var devices      = new List<OutputDevice>();
+        IMMDeviceEnumerator? enumerator = null;
+        IntPtr collectionPtr = IntPtr.Zero;
+        IMMDevice? defaultDevice = null;
+        try
+        {
+            enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+
+            try { enumerator.EnumAudioEndpoints(EDataFlow.Capture, DeviceState.Active, out collectionPtr); }
+            catch { }
+            if (collectionPtr == IntPtr.Zero) return devices;
+
+            try { enumerator.GetDefaultAudioEndpoint(EDataFlow.Capture, ERole.Communications, out defaultDevice); }
+            catch { }
+
+            string? defaultId = null;
+            if (defaultDevice != null)
+                try { defaultDevice.GetId(out defaultId); } catch { }
+
+            var getCount = VtableDelegate<CollGetCountDelegate>(collectionPtr, 3);
+            if (getCount(collectionPtr, out uint count) < 0) return devices;
+
+            var getItem = VtableDelegate<CollItemDelegate>(collectionPtr, 4);
+            for (uint i = 0; i < count; i++)
+            {
+                IntPtr devicePtr = IntPtr.Zero;
+                try
+                {
+                    if (getItem(collectionPtr, i, out devicePtr) < 0 || devicePtr == IntPtr.Zero) continue;
+                    var getId = VtableDelegate<DevGetIdDelegate>(devicePtr, 5);
+                    getId(devicePtr, out var id);
+                    var name = GetFriendlyName(devicePtr) ?? id;
+                    devices.Add(new OutputDevice(id, name, id == defaultId));
+                }
+                catch { }
+                finally { if (devicePtr != IntPtr.Zero) Marshal.Release(devicePtr); }
+            }
+        }
+        catch { }
+        finally
+        {
+            MarshalHelpers.ReleaseComObject(defaultDevice);
+            if (collectionPtr != IntPtr.Zero) Marshal.Release(collectionPtr);
+            MarshalHelpers.ReleaseComObject(enumerator);
+        }
+        return devices.OrderByDescending(d => d.IsDefault).ThenBy(d => d.Name).ToList();
+    }
+
     public void SetDefaultDevice(string deviceId)
     {
         var policyConfig = (IPolicyConfig)new PolicyConfigClient();

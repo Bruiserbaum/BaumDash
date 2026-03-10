@@ -190,11 +190,11 @@ public sealed class MainForm : Form
         var btnSettings = new Button
         {
             Text      = "⚙",
-            Font      = new Font("Segoe UI", 14f, FontStyle.Bold),
+            Font      = new Font("Segoe UI", 16f, FontStyle.Bold),
             ForeColor = AppTheme.TextSecondary,
             BackColor = AppTheme.BgCard,
             FlatStyle = FlatStyle.Flat,
-            Size      = new Size(44, 44),
+            Size      = new Size(54, 54),
             Cursor    = Cursors.Hand,
             Anchor    = AnchorStyles.Bottom | AnchorStyles.Left,
             FlatAppearance = { BorderSize = 1, BorderColor = AppTheme.Border,
@@ -208,17 +208,17 @@ public sealed class MainForm : Form
         var btnHelp = new Button
         {
             Text      = "?",
-            Font      = new Font("Segoe UI", 14f, FontStyle.Bold),
+            Font      = new Font("Segoe UI", 16f, FontStyle.Bold),
             ForeColor = AppTheme.TextSecondary,
             BackColor = AppTheme.BgCard,
             FlatStyle = FlatStyle.Flat,
-            Size      = new Size(44, 44),
+            Size      = new Size(54, 54),
             Cursor    = Cursors.Hand,
             Anchor    = AnchorStyles.Bottom | AnchorStyles.Left,
             FlatAppearance = { BorderSize = 1, BorderColor = AppTheme.Border,
                                MouseOverBackColor = AppTheme.BgPanel },
         };
-        btnHelp.Location = new Point(60, ClientSize.Height - btnHelp.Height - 8);
+        btnHelp.Location = new Point(70, ClientSize.Height - btnHelp.Height - 8);
         btnHelp.Click   += (_, _) => ShowHelpDialog();
         Controls.Add(btnHelp);
         _btnHelp = btnHelp; // brought to front in OnLoad
@@ -238,7 +238,7 @@ public sealed class MainForm : Form
             FlatAppearance = { BorderSize = 0,
                                MouseOverBackColor = ControlPaint.Dark(AppTheme.Warning, 0.12f) },
         };
-        btnUpdate.Location = new Point(112, ClientSize.Height - btnUpdate.Height - 8);
+        btnUpdate.Location = new Point(132, ClientSize.Height - btnUpdate.Height - 8);
         btnUpdate.Click   += OnUpdateButtonClick;
         Controls.Add(btnUpdate);
         _btnUpdate = btnUpdate;
@@ -451,6 +451,7 @@ public sealed class MainForm : Form
                     _closeToTray = cfg.CloseToTray;
                     _devicePanel?.ApplyGpuPlatform(cfg.GpuPlatform);
                     ApplyLayout(cfg.LayoutProfile ?? "auto");
+                    _discordPanel?.ApplyTabVisibility(cfg.HiddenDiscordTabs ?? new List<string>());
                 }
             }
         }

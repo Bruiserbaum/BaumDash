@@ -60,6 +60,9 @@ public static class AppTheme
 
     // ── Theme presets ─────────────────────────────────────────────────────────
 
+    public static readonly Color DefaultAccent      = Color.FromArgb(88, 101, 242);
+    public static readonly Color DefaultAccentHover = Color.FromArgb(71,  82, 196);
+
     public static void ApplyDark()
     {
         BgDeep         = Color.FromArgb(13,  13,  26);
@@ -70,6 +73,8 @@ public static class AppTheme
         TextSecondary  = Color.FromArgb(142, 146, 151);
         TextMuted      = Color.FromArgb(114, 118, 125);
         Border         = Color.FromArgb(46,   47,  62);
+        Accent         = DefaultAccent;
+        AccentHover    = DefaultAccentHover;
     }
 
     public static void ApplyLight()
@@ -82,6 +87,8 @@ public static class AppTheme
         TextSecondary  = Color.FromArgb(80,   84,  96);
         TextMuted      = Color.FromArgb(120, 124, 135);
         Border         = Color.FromArgb(195, 195, 215);
+        Accent         = DefaultAccent;
+        AccentHover    = DefaultAccentHover;
     }
 
     /// <summary>Dark theme with a custom accent colour.</summary>
