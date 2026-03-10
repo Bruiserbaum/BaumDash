@@ -90,7 +90,7 @@ public sealed class AudioDevicePanel : UserControl
 
         _replayButton      = MakeFlatButton("🎬  SAVE AMD REPLAY", AppTheme.Accent);
         _replayButton.Font = _fButton;
-        _replayButton.Click += (_, _) => Task.Run(_replayAction);
+        _replayButton.Click += OnReplayClick;
 
         Controls.AddRange(new Control[]
         {
@@ -385,6 +385,25 @@ public sealed class AudioDevicePanel : UserControl
         _speakerMuteButton.ForeColor = _speakerMuted ? AppTheme.TextMuted : Color.White;
         _speakerMuteButton.FlatAppearance.MouseOverBackColor =
             _speakerMuted ? AppTheme.BgPanel : AppTheme.AccentHover;
+    }
+
+    private async void OnReplayClick(object? sender, EventArgs e)
+    {
+        _replayButton.Enabled   = false;
+        _replayButton.Text      = "⏳  SAVING…";
+        _replayButton.BackColor = AppTheme.AccentHover;
+
+        await Task.Run(_replayAction);
+
+        await Task.Delay(4000);
+
+        if (IsHandleCreated)
+            BeginInvoke(() =>
+            {
+                _replayButton.Text      = _replayLabel.Contains("NVIDIA") ? "🎬  SAVE NVIDIA CLIP" : "🎬  SAVE AMD REPLAY";
+                _replayButton.BackColor = AppTheme.Accent;
+                _replayButton.Enabled   = true;
+            });
     }
 
     private void OnMasterVolumeChanged(object? sender, EventArgs e)

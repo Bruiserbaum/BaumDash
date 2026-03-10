@@ -17,7 +17,7 @@ public sealed class DiscordPanel : UserControl
     // State
     private DiscordConnectionState _connState  = DiscordConnectionState.Disconnected;
     private List<DiscordMember>    _members    = new();
-    private enum                   ActiveTab   { Discord, Ai, ChatGpt, Pc, Calendar, Apps }
+    private enum                   ActiveTab   { Discord, Ai, ChatGpt, Pc, Calendar, Ha, Apps }
     private ActiveTab              _activeTab  = ActiveTab.Discord;
     private bool                   _aiWelcomed = false;
 
@@ -27,7 +27,23 @@ public sealed class DiscordPanel : UserControl
     private readonly Button _tabChatGpt;
     private readonly Button _tabPc;
     private readonly Button _tabCalendar;
+    private readonly Button _tabHa;
     private readonly Button _tabApps;
+
+    // Home Assistant panel
+    private readonly HomeAssistantService?               _haSvc;
+    private readonly Panel                               _haPanel;
+    private readonly List<Label>                         _haSensorLabels  = new();
+    private readonly List<(Button btn, string entityId)> _haLightButtons  = new();
+    private readonly List<(Button btn, string entityId)> _haSwitchButtons = new();
+    private Label? _haSensorsHeader;
+    private Panel? _haSensorsSep;
+    private Label? _haLightsHeader;
+    private Panel? _haLightsSep;
+    private Label? _haSwitchesHeader;
+    private Panel? _haSwitchesSep;
+    private System.Windows.Forms.Timer?                  _haTimer;
+    private bool                                         _haConnected;
 
     // Discord controls
     private readonly Button      _connectButton;
@@ -70,17 +86,18 @@ public sealed class DiscordPanel : UserControl
     private readonly AppShortcutsPanel _appsPanel;
 
     // Layout constants
-    private const int TabBarH     = 40;
+    private const int TabBarH     = 48;
     private const int VoiceListY  = 108 + TabBarH;             // 148
     private const int VoiceListH  = 200;
     private const int ChatHeaderY = VoiceListY + VoiceListH + 8; // 356
     private const int ChatY       = ChatHeaderY + 24;            // 380
 
-    public DiscordPanel(DiscordService discord, AnythingLLMService? aiSvc = null, ChatGptService? chatGptSvc = null, GoogleCalendarService? calSvc = null)
+    public DiscordPanel(DiscordService discord, AnythingLLMService? aiSvc = null, ChatGptService? chatGptSvc = null, GoogleCalendarService? calSvc = null, HomeAssistantService? haSvc = null)
     {
         _discord     = discord;
         _aiSvc       = aiSvc;
         _chatGptSvc  = chatGptSvc;
+        _haSvc       = haSvc;
         _guildFilter = LoadGuildFilter();
 
         BackColor = AppTheme.BgPanel;
@@ -88,22 +105,25 @@ public sealed class DiscordPanel : UserControl
                  ControlStyles.AllPaintingInWmPaint, true);
 
         // ── Tab buttons ───────────────────────────────────────────────────────
-        _tabDiscord = MakeTabButton("DISCORD", active: true);
+        _tabDiscord = MakeTabButton("Discord", active: true);
         _tabDiscord.Click += (_, _) => SwitchTab(ActiveTab.Discord);
 
-        _tabAi = MakeTabButton("AI CHAT", active: false);
+        _tabAi = MakeTabButton("AI Chat", active: false);
         _tabAi.Click += (_, _) => SwitchTab(ActiveTab.Ai);
 
-        _tabChatGpt = MakeTabButton("CHATGPT", active: false);
+        _tabChatGpt = MakeTabButton("ChatGPT", active: false);
         _tabChatGpt.Click += (_, _) => SwitchTab(ActiveTab.ChatGpt);
 
-        _tabPc = MakeTabButton("PC PERF", active: false);
+        _tabPc = MakeTabButton("PC Perf", active: false);
         _tabPc.Click += (_, _) => SwitchTab(ActiveTab.Pc);
 
-        _tabCalendar = MakeTabButton("CALENDAR", active: false);
+        _tabCalendar = MakeTabButton("Calendar", active: false);
         _tabCalendar.Click += (_, _) => SwitchTab(ActiveTab.Calendar);
 
-        _tabApps = MakeTabButton("APPS", active: false);
+        _tabHa = MakeTabButton("Home Asst", active: false);
+        _tabHa.Click += (_, _) => SwitchTab(ActiveTab.Ha);
+
+        _tabApps = MakeTabButton("Apps", active: false);
         _tabApps.Click += (_, _) => SwitchTab(ActiveTab.Apps);
 
         // ── Discord controls ──────────────────────────────────────────────────
@@ -137,7 +157,7 @@ public sealed class DiscordPanel : UserControl
             }
         };
 
-        _micButton = MakeFlatButton("🎙  DISCORD MUTE", AppTheme.Success, 170, 40);
+        _micButton = MakeFlatButton("🎙  DISCORD MUTE", AppTheme.Accent, 170, 40);
         _micButton.Click += OnMicClick;
 
         _streamButton = MakeFlatButton("📺  STREAM IN DISCORD", AppTheme.BgCard, 190, 40);
@@ -246,13 +266,17 @@ public sealed class DiscordPanel : UserControl
         // App shortcuts panel
         _appsPanel = new AppShortcutsPanel { Visible = false };
 
+        // ── Home Assistant panel ───────────────────────────────────────────────
+        _haPanel = new Panel { BackColor = Color.Transparent, AutoScroll = true, Visible = false };
+        BuildHaPanel();
+
         // ── Add everything ────────────────────────────────────────────────────
         Controls.AddRange(new Control[]
         {
             _statusLabel, _connectButton, _refreshButton, _micButton, _streamButton,
             _memberListPanel, _chatBox,
-            _tabDiscord, _tabAi, _tabChatGpt, _tabPc, _tabCalendar, _tabApps,
-            _aiPanel, _chatGptPanel, _pcPanel, _calendarPanel, _appsPanel,
+            _tabDiscord, _tabAi, _tabChatGpt, _tabPc, _tabCalendar, _tabHa, _tabApps,
+            _aiPanel, _chatGptPanel, _pcPanel, _calendarPanel, _haPanel, _appsPanel,
         });
 
         if (configured)
@@ -279,12 +303,13 @@ public sealed class DiscordPanel : UserControl
         int cw = w - 32;
 
         // Tab buttons
-        _tabDiscord .SetBounds(x,       7, 72, 26);
-        _tabAi      .SetBounds(x + 78,  7, 68, 26);
-        _tabChatGpt .SetBounds(x + 152, 7, 72, 26);
-        _tabPc      .SetBounds(x + 230, 7, 72, 26);
-        _tabCalendar.SetBounds(x + 308, 7, 80, 26);
-        _tabApps    .SetBounds(x + 394, 7, 52, 26);
+        _tabDiscord .SetBounds(x,        8, 84, 32);
+        _tabAi      .SetBounds(x + 90,   8, 80, 32);
+        _tabChatGpt .SetBounds(x + 176,  8, 84, 32);
+        _tabPc      .SetBounds(x + 266,  8, 80, 32);
+        _tabCalendar.SetBounds(x + 352,  8, 90, 32);
+        _tabHa      .SetBounds(x + 448,  8, 102, 32);
+        _tabApps    .SetBounds(x + 556,  8, 62, 32);
 
         // Discord controls
         _statusLabel   .SetBounds(x, TabBarH + 6,  cw, 20);
@@ -299,11 +324,12 @@ public sealed class DiscordPanel : UserControl
         _micButton   .SetBounds(x,       by, 170, 40);
         _streamButton.SetBounds(x + 178, by, 190, 40);
 
-        // AI / ChatGPT / PC / Calendar panels
+        // AI / ChatGPT / PC / Calendar / HA / Apps panels
         _aiPanel       .SetBounds(0, TabBarH, w, h - TabBarH);
         _chatGptPanel  .SetBounds(0, TabBarH, w, h - TabBarH);
         _pcPanel       .SetBounds(0, TabBarH, w, h - TabBarH);
         _calendarPanel .SetBounds(0, TabBarH, w, h - TabBarH);
+        _haPanel       .SetBounds(0, TabBarH, w, h - TabBarH);
         _appsPanel     .SetBounds(0, TabBarH, w, h - TabBarH);
         LayoutPcPanel();
 
@@ -334,12 +360,14 @@ public sealed class DiscordPanel : UserControl
         bool gpt      = tab == ActiveTab.ChatGpt;
         bool pc       = tab == ActiveTab.Pc;
         bool calendar = tab == ActiveTab.Calendar;
+        bool ha       = tab == ActiveTab.Ha;
         bool apps     = tab == ActiveTab.Apps;
 
         _aiPanel       .Visible = ai;
         _chatGptPanel  .Visible = gpt;
         _pcPanel       .Visible = pc;
         _calendarPanel .Visible = calendar;
+        _haPanel       .Visible = ha;
         _appsPanel     .Visible = apps;
 
         bool connected = _connState == DiscordConnectionState.Connected;
@@ -358,6 +386,7 @@ public sealed class DiscordPanel : UserControl
             (_tabChatGpt,  gpt),
             (_tabPc,       pc),
             (_tabCalendar, calendar),
+            (_tabHa,       ha),
             (_tabApps,     apps),
         })
         {
@@ -418,6 +447,21 @@ public sealed class DiscordPanel : UserControl
         {
             _calendarLoaded = true;
             _ = _calendarPanel.LoadAsync();
+        }
+
+        if (ha)
+        {
+            if (_haTimer == null && _haSvc?.IsConfigured == true)
+            {
+                _haTimer = new System.Windows.Forms.Timer { Interval = 30_000 };
+                _haTimer.Tick += (_, _) => _ = Task.Run(RefreshHaAsync);
+            }
+            _haTimer?.Start();
+            _ = Task.Run(RefreshHaAsync);
+        }
+        else
+        {
+            _haTimer?.Stop();
         }
 
         Invalidate();
@@ -673,7 +717,10 @@ public sealed class DiscordPanel : UserControl
     {
         if (InvokeRequired) { BeginInvoke(() => OnMicMuteChanged(muted)); return; }
         _micButton.Text      = muted ? "🔇  DISCORD MUTED" : "🎙  DISCORD MUTE";
-        _micButton.BackColor = muted ? AppTheme.Danger     : AppTheme.Success;
+        _micButton.BackColor = muted ? AppTheme.BgCard     : AppTheme.Accent;
+        _micButton.ForeColor = muted ? AppTheme.TextMuted  : Color.White;
+        _micButton.FlatAppearance.MouseOverBackColor =
+            muted ? AppTheme.BgPanel : AppTheme.AccentHover;
     }
 
     private void OnGuildChanged(string? guildName)
@@ -770,6 +817,9 @@ public sealed class DiscordPanel : UserControl
 
     // ── Painting ──────────────────────────────────────────────────────────────
 
+    protected override void OnPaintBackground(PaintEventArgs e)
+        => AppTheme.PaintBackground(e.Graphics, this, AppTheme.BgPanel);
+
     protected override void OnPaint(PaintEventArgs e)
     {
         base.OnPaint(e);
@@ -789,12 +839,12 @@ public sealed class DiscordPanel : UserControl
             {
                 using var secBrush = new SolidBrush(AppTheme.TextSecondary);
                 g.DrawString($"VOICE MEMBERS  ({_members.Count})",
-                    AppTheme.FontSectionHeader, secBrush, x, VoiceListY - 14);
+                    AppTheme.FontPanelHeader, secBrush, x, VoiceListY - 18);
             }
 
             // Chat section
             g.DrawLine(sepPen, x, ChatHeaderY - 2, x + w, ChatHeaderY - 2);
-            g.DrawString("MESSAGES", AppTheme.FontSectionHeader, mutedBrush, x, ChatHeaderY + 2);
+            g.DrawString("MESSAGES", AppTheme.FontPanelHeader, mutedBrush, x, ChatHeaderY + 2);
 
             // Bottom separator above buttons
             g.DrawLine(sepPen, x, ClientSize.Height - 60, x + w, ClientSize.Height - 60);
@@ -953,6 +1003,249 @@ public sealed class DiscordPanel : UserControl
         return $"Processes: {snap.ProcessCount}     Uptime: {upStr}";
     }
 
+    // ── Home Assistant ────────────────────────────────────────────────────────
+
+    private void BuildHaPanel()
+    {
+        if (_haSvc?.IsConfigured != true)
+        {
+            var lbl = new Label
+            {
+                Text      = "Home Assistant is not configured.\nEdit ha-config.json next to the exe.",
+                Font      = AppTheme.FontLabel,
+                ForeColor = AppTheme.TextMuted,
+                BackColor = Color.Transparent,
+                AutoSize  = false,
+                TextAlign = ContentAlignment.TopLeft,
+            };
+            lbl.SetBounds(16, 16, 400, 60);
+            _haPanel.Controls.Add(lbl);
+            return;
+        }
+
+        int x = 16, y = 12;
+        int w = 400; // will be re-laid out on resize; use a reasonable default
+
+        if (_haSvc.Config.Sensors.Count > 0)
+        {
+            _haSensorsHeader = MakeHaSectionLabel("SENSORS");
+            _haSensorsHeader.SetBounds(x, y, w, 18);
+            _haPanel.Controls.Add(_haSensorsHeader);
+            y += 22;
+            _haSensorsSep = new Panel { BackColor = AppTheme.Border };
+            _haSensorsSep.SetBounds(x, y, w, 1);
+            _haPanel.Controls.Add(_haSensorsSep);
+            y += 9;
+        }
+
+        foreach (var sensor in _haSvc.Config.Sensors)
+        {
+            var lbl = new Label
+            {
+                Text      = $"{sensor.Name}: …",
+                Font      = new Font("Segoe UI", 11f),
+                ForeColor = AppTheme.TextPrimary,
+                BackColor = Color.Transparent,
+                AutoSize  = false,
+                AutoEllipsis = true,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Tag       = sensor,
+            };
+            lbl.SetBounds(x, y, w, 24);
+            _haSensorLabels.Add(lbl);
+            _haPanel.Controls.Add(lbl);
+            y += 26;
+        }
+
+        if (_haSensorLabels.Count > 0) y += 12;
+
+        if (_haSvc.Config.Lights.Count > 0)
+        {
+            _haLightsHeader = MakeHaSectionLabel("LIGHTS");
+            _haLightsHeader.SetBounds(x, y, w, 18);
+            _haPanel.Controls.Add(_haLightsHeader);
+            y += 22;
+            _haLightsSep = new Panel { BackColor = AppTheme.Border };
+            _haLightsSep.SetBounds(x, y, w, 1);
+            _haPanel.Controls.Add(_haLightsSep);
+            y += 9;
+        }
+
+        foreach (var light in _haSvc.Config.Lights)
+        {
+            var btn = MakeHaButton($"💡  {light.Name.ToUpper()}");
+            var eid = light.Id;
+            btn.Click += async (_, _) =>
+            {
+                try
+                {
+                    await _haSvc.ToggleLightAsync(eid);
+                    await Task.Delay(400);
+                    await RefreshHaLightAsync(btn, eid);
+                }
+                catch { }
+            };
+            btn.SetBounds(x, y, w, 36);
+            _haLightButtons.Add((btn, eid));
+            _haPanel.Controls.Add(btn);
+            y += 44;
+        }
+
+        if (_haLightButtons.Count > 0) y += 12;
+
+        if (_haSvc.Config.Switches.Count > 0)
+        {
+            _haSwitchesHeader = MakeHaSectionLabel("SWITCHES");
+            _haSwitchesHeader.SetBounds(x, y, w, 18);
+            _haPanel.Controls.Add(_haSwitchesHeader);
+            y += 22;
+            _haSwitchesSep = new Panel { BackColor = AppTheme.Border };
+            _haSwitchesSep.SetBounds(x, y, w, 1);
+            _haPanel.Controls.Add(_haSwitchesSep);
+            y += 9;
+        }
+
+        foreach (var sw in _haSvc.Config.Switches)
+        {
+            var btn = MakeHaButton($"🔌  {sw.Name.ToUpper()}");
+            var eid = sw.Id;
+            btn.Click += async (_, _) =>
+            {
+                try
+                {
+                    await _haSvc.ToggleSwitchAsync(eid);
+                    await Task.Delay(400);
+                    await RefreshHaSwitchAsync(btn, eid);
+                }
+                catch { }
+            };
+            btn.SetBounds(x, y, w, 36);
+            _haSwitchButtons.Add((btn, eid));
+            _haPanel.Controls.Add(btn);
+            y += 44;
+        }
+
+        _haPanel.Resize += (_, _) => LayoutHaPanel();
+    }
+
+    private void LayoutHaPanel()
+    {
+        int x = 16, w = Math.Max(100, _haPanel.ClientSize.Width - 32);
+        int y = 12;
+
+        if (_haSensorsHeader != null)
+        {
+            _haSensorsHeader.SetBounds(x, y, w, 18); y += 22;
+            _haSensorsSep?.SetBounds(x, y, w, 1);    y += 9;
+        }
+        foreach (var lbl in _haSensorLabels)
+        {
+            lbl.SetBounds(x, y, w, 24);
+            y += 26;
+        }
+        if (_haSensorLabels.Count > 0) y += 12;
+
+        if (_haLightsHeader != null)
+        {
+            _haLightsHeader.SetBounds(x, y, w, 18); y += 22;
+            _haLightsSep?.SetBounds(x, y, w, 1);    y += 9;
+        }
+        foreach (var (btn, _) in _haLightButtons)
+        {
+            btn.SetBounds(x, y, w, 36);
+            y += 44;
+        }
+        if (_haLightButtons.Count > 0) y += 12;
+
+        if (_haSwitchesHeader != null)
+        {
+            _haSwitchesHeader.SetBounds(x, y, w, 18); y += 22;
+            _haSwitchesSep?.SetBounds(x, y, w, 1);    y += 9;
+        }
+        foreach (var (btn, _) in _haSwitchButtons)
+        {
+            btn.SetBounds(x, y, w, 36);
+            y += 44;
+        }
+    }
+
+    private static Label MakeHaSectionLabel(string title) => new()
+    {
+        Text      = title,
+        Font      = AppTheme.FontSectionHeader,
+        ForeColor = AppTheme.TextMuted,
+        BackColor = Color.Transparent,
+        AutoSize  = false,
+        TextAlign = ContentAlignment.MiddleLeft,
+    };
+
+    private async Task RefreshHaAsync()
+    {
+        if (_haSvc == null) return;
+        bool anySuccess = false;
+
+        for (int i = 0; i < _haSvc.Config.Sensors.Count && i < _haSensorLabels.Count; i++)
+        {
+            var (state, unit) = await _haSvc.GetSensorAsync(_haSvc.Config.Sensors[i].Id);
+            if (state != "?") anySuccess = true;
+            var name = _haSvc.Config.Sensors[i].Name;
+            var text = state == "?" ? $"{name}: –" : $"{name}: {state}{unit}";
+            var lbl  = _haSensorLabels[i];
+            if (lbl.InvokeRequired) lbl.BeginInvoke(() => lbl.Text = text);
+            else                    lbl.Text = text;
+        }
+
+        for (int i = 0; i < _haLightButtons.Count; i++)
+        {
+            var (btn, eid) = _haLightButtons[i];
+            await RefreshHaLightAsync(btn, eid);
+            anySuccess = true;
+        }
+
+        for (int i = 0; i < _haSwitchButtons.Count; i++)
+        {
+            var (btn, eid) = _haSwitchButtons[i];
+            await RefreshHaSwitchAsync(btn, eid);
+            anySuccess = true;
+        }
+
+        if (_haConnected != anySuccess)
+        {
+            _haConnected = anySuccess;
+            if (InvokeRequired) BeginInvoke(Invalidate);
+            else                Invalidate();
+        }
+    }
+
+    private async Task RefreshHaLightAsync(Button btn, string entityId)
+    {
+        if (_haSvc == null) return;
+        var isOn  = await _haSvc.GetLightStateAsync(entityId);
+        var color = isOn ? AppTheme.Accent : AppTheme.BgCard;
+        if (btn.InvokeRequired) btn.BeginInvoke(() => btn.BackColor = color);
+        else                    btn.BackColor = color;
+    }
+
+    private async Task RefreshHaSwitchAsync(Button btn, string entityId)
+    {
+        if (_haSvc == null) return;
+        var isOn  = await _haSvc.GetSwitchStateAsync(entityId);
+        var color = isOn ? AppTheme.Accent : AppTheme.BgCard;
+        if (btn.InvokeRequired) btn.BeginInvoke(() => btn.BackColor = color);
+        else                    btn.BackColor = color;
+    }
+
+    private static Button MakeHaButton(string text) => new()
+    {
+        Text      = text,
+        Font      = AppTheme.FontButton,
+        BackColor = AppTheme.BgCard,
+        ForeColor = Color.White,
+        FlatStyle = FlatStyle.Flat,
+        Cursor    = Cursors.Hand,
+        FlatAppearance = { BorderSize = 0 },
+    };
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static string? LoadGuildFilter()
@@ -967,7 +1260,7 @@ public sealed class DiscordPanel : UserControl
         new()
         {
             Text      = text,
-            Font      = AppTheme.FontBold,
+            Font      = AppTheme.FontPanelSub,
             ForeColor = active ? AppTheme.TextPrimary : AppTheme.TextMuted,
             BackColor = active ? AppTheme.BgCard       : Color.Transparent,
             FlatStyle = FlatStyle.Flat,
@@ -994,6 +1287,8 @@ public sealed class DiscordPanel : UserControl
         {
             _pcTimer?.Stop();
             _pcTimer?.Dispose();
+            _haTimer?.Stop();
+            _haTimer?.Dispose();
             _pcSvc.Dispose();
             _discord.ConnectionStateChanged -= OnConnectionChanged;
             _discord.VoiceStateChanged      -= OnVoiceStateChanged;
@@ -1128,7 +1423,7 @@ internal static class NativeMethods
 
     private const uint   INPUT_KEYBOARD  = 1;
     private const uint   KEYEVENTF_KEYUP = 0x0002;
-    private const ushort VK_CTRL = 0x11, VK_SHIFT = 0x10, VK_M = 0x4D, VK_S = 0x53;
+    private const ushort VK_CTRL = 0x11, VK_SHIFT = 0x10, VK_ALT = 0x12, VK_M = 0x4D, VK_S = 0x53, VK_F10 = 0x79;
 
     internal static void ToggleDiscordMute()
     {
@@ -1165,6 +1460,24 @@ internal static class NativeMethods
             {
                 Key(VK_CTRL,  0),               Key(VK_SHIFT, 0),               Key(VK_S, 0),
                 Key(VK_S,     KEYEVENTF_KEYUP), Key(VK_SHIFT, KEYEVENTF_KEYUP), Key(VK_CTRL, KEYEVENTF_KEYUP),
+            };
+            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
+        }
+        catch { }
+    }
+
+    /// <summary>Sends Alt+F10 — GeForce Experience / NVIDIA App ShadowPlay "Save Replay" shortcut.</summary>
+    internal static void SaveNvidiaReplay()
+    {
+        try
+        {
+            const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
+            var inputs = new[]
+            {
+                Key(VK_ALT,  KEYEVENTF_EXTENDEDKEY),
+                Key(VK_F10,  KEYEVENTF_EXTENDEDKEY),
+                Key(VK_F10,  KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
+                Key(VK_ALT,  KEYEVENTF_EXTENDEDKEY | KEYEVENTF_KEYUP),
             };
             SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
         }
