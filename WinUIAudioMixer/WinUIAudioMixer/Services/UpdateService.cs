@@ -11,8 +11,9 @@ public sealed record UpdateReleaseInfo(string Version, string DownloadUrl, strin
 /// </summary>
 public static class UpdateService
 {
-    /// <summary>Version that is currently running.  Bump this with every release.</summary>
-    public const string CurrentVersion = "2.3.7";
+    /// <summary>Version that is currently running — read from the assembly, set via &lt;Version&gt; in the .csproj.</summary>
+    public static readonly string CurrentVersion =
+        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
 
     private const string GitHubOwner = "Bruiserbaum";
     private const string GitHubRepo  = "BaumDash";
