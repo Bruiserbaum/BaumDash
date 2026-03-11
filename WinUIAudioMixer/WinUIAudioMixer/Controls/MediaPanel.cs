@@ -208,8 +208,8 @@ public sealed class MediaPanel : UserControl
         string title  = _current.HasSession ? (string.IsNullOrWhiteSpace(_current.Title)  ? "Nothing Playing"  : _current.Title) : "No media";
         string artist = _current.HasSession ? (string.IsNullOrWhiteSpace(_current.Artist) ? ""                 : _current.Artist) : "";
 
-        var titleRect  = new RectangleF(16, infoY,      ClientSize.Width - 32, 24);
-        var artistRect = new RectangleF(16, infoY + 28, ClientSize.Width - 32, 26);
+        var titleRect  = new RectangleF(16, infoY,      ClientSize.Width - 32, 46);
+        var artistRect = new RectangleF(16, infoY + 50, ClientSize.Width - 32, 26);
 
         g.DrawString(title,  AppTheme.FontMedia,    titleBrush,  titleRect,  titleFmt);
         g.DrawString(artist, AppTheme.FontMediaSub, artistBrush, artistRect, artistFmt);

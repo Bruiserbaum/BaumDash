@@ -722,10 +722,10 @@ public sealed class DiscordPanel : UserControl
     {
         if (InvokeRequired) { BeginInvoke(() => OnMicMuteChanged(muted)); return; }
         _micButton.Text      = muted ? "🔇  DISCORD MUTED" : "🎙  DISCORD MUTE";
-        _micButton.BackColor = muted ? AppTheme.BgCard     : AppTheme.Accent;
-        _micButton.ForeColor = muted ? AppTheme.TextMuted  : Color.White;
+        _micButton.BackColor = muted ? AppTheme.Accent     : AppTheme.BgCard;
+        _micButton.ForeColor = muted ? Color.White         : AppTheme.TextMuted;
         _micButton.FlatAppearance.MouseOverBackColor =
-            muted ? AppTheme.BgPanel : AppTheme.AccentHover;
+            muted ? AppTheme.AccentHover : AppTheme.BgPanel;
     }
 
     private void OnGuildChanged(string? guildName)
