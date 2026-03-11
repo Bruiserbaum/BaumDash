@@ -162,8 +162,8 @@ public sealed class MediaPanel : UserControl
         using var clockBrush = new SolidBrush(AppTheme.TextPrimary);
         using var dateBrush  = new SolidBrush(AppTheme.TextSecondary);
 
-        var timeRect = new RectangleF(0, clockY,      ClientSize.Width, 82);
-        var dateRect = new RectangleF(0, clockY + 84, ClientSize.Width, 28);
+        var timeRect = new RectangleF(0, clockY,       ClientSize.Width, 110);
+        var dateRect = new RectangleF(0, clockY + 114, ClientSize.Width, 32);
 
         g.DrawString(time, AppTheme.FontClock,     clockBrush, timeRect, timeFmt);
         g.DrawString(date, AppTheme.FontClockDate, dateBrush,  dateRect, dateFmt);
