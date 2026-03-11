@@ -137,6 +137,29 @@ internal static class SecureStorage
         TryDelete(secretPath);
     }
 
+    // ── Ongoing legacy cleanup ────────────────────────────────────────────────
+
+    /// <summary>
+    /// Removes plaintext secret artifacts that are no longer needed now that
+    /// secrets live in the DPAPI-encrypted store.  Safe to call every startup.
+    /// </summary>
+    public static void CleanupLegacyFiles()
+    {
+        var dir = AppContext.BaseDirectory;
+
+        // Delete plaintext secret files (migrated or never used)
+        TryDelete(Path.Combine(dir, "discord-client-id.txt"));
+        TryDelete(Path.Combine(dir, "discord-client-secret.txt"));
+
+        // gcalendar-config.json is now fully replaced by SecurePayload.Calendars
+        TryDelete(Path.Combine(dir, "gcalendar-config.json"));
+
+        // Strip secret keys from JSON configs so they no longer contain plaintext
+        StripSecretsFromJson(Path.Combine(dir, "chatgpt-config.json"),     "ApiKey");
+        StripSecretsFromJson(Path.Combine(dir, "anythingllm-config.json"), "ApiKey");
+        StripSecretsFromJson(Path.Combine(dir, "ha-config.json"),          "Token");
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static void TryReadJson(string path, Action<JsonDocument> read)
@@ -149,5 +172,41 @@ internal static class SecureStorage
     private static void TryDelete(string path)
     {
         try { if (File.Exists(path)) File.Delete(path); } catch { }
+    }
+
+    /// <summary>
+    /// Rewrites a JSON file with the specified top-level keys removed.
+    /// Handles both PascalCase and camelCase variants of each key name.
+    /// No-ops silently if the file doesn't exist or contains no matching keys.
+    /// </summary>
+    private static void StripSecretsFromJson(string path, params string[] keysToRemove)
+    {
+        if (!File.Exists(path)) return;
+        try
+        {
+            var text = File.ReadAllText(path);
+            var obj  = System.Text.Json.Nodes.JsonNode.Parse(text)
+                       as System.Text.Json.Nodes.JsonObject;
+            if (obj == null) return;
+
+            bool changed = false;
+            foreach (var key in keysToRemove)
+            {
+                // Remove both "ApiKey" and "apiKey" variants
+                if (obj.ContainsKey(key))                                { obj.Remove(key); changed = true; }
+                var camel = char.ToLowerInvariant(key[0]) + key[1..];
+                if (key != camel && obj.ContainsKey(camel))              { obj.Remove(camel); changed = true; }
+            }
+
+            if (!changed) return;
+
+            var opts = new JsonSerializerOptions { WriteIndented = true };
+            File.WriteAllText(path, obj.ToJsonString(opts));
+            CrashLogger.Info($"SecureStorage: stripped secrets from {Path.GetFileName(path)}");
+        }
+        catch (Exception ex)
+        {
+            CrashLogger.Error($"SecureStorage.StripSecretsFromJson failed for {path}", ex);
+        }
     }
 }

@@ -57,6 +57,8 @@ public sealed class MainForm : Form
 
         // One-time migration: move secrets from plaintext files into DPAPI-encrypted store
         Services.SecureStorage.MigrateFromPlaintext();
+        // Every startup: remove any lingering plaintext secret artifacts
+        Services.SecureStorage.CleanupLegacyFiles();
 
         // Discord: client ID loaded from secure storage
         var clientId = LoadDiscordClientId();
