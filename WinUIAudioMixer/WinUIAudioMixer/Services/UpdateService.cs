@@ -186,16 +186,20 @@ public static class UpdateService
         var latestClean  = StripPreRelease(latest);
         var currentClean = StripPreRelease(current);
 
+        bool latestIsPre  = latest.Contains('-');
+        bool currentIsPre = current.Contains('-');
+
         if (Version.TryParse(latestClean,  out var v1) &&
             Version.TryParse(currentClean, out var v2))
         {
-            if (v1 != v2) return v1 > v2;
-            // Same numeric version: a pre-release suffix on latest means it's
-            // not yet "newer" than the same clean release (e.g. 2.5.0-dev vs 2.5.0 stable).
-            // But a clean release is newer than the pre-release of the same number.
-            bool latestIsPre  = latest.Contains('-');
-            bool currentIsPre = current.Contains('-');
-            // stable 2.5.0 > dev 2.5.0-dev, but dev 2.5.0-dev NOT > stable 2.5.0
+            if (v1 != v2)
+            {
+                // Running a dev build and switching to stable: always offer the
+                // stable even if its number is lower (e.g. 2.5.0 stable when on 2.5.9-dev).
+                if (currentIsPre && !latestIsPre) return true;
+                return v1 > v2;
+            }
+            // Same numeric version: stable release is newer than same-number pre-release.
             return !latestIsPre && currentIsPre;
         }
 
