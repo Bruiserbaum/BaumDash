@@ -1,6 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.5.7"
-#define AppVersionFull "2.5.7-dev"
+#define AppVersion   "2.5.8"
+#define AppVersionFull "2.5.8-dev"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -88,12 +88,11 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 [Files]
 ; Main application (single-file publish — all managed code bundled into the exe)
 Source: "{#PublishDir}\{#AppExeName}";                    DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete
-; Native WPF/DirectX helpers required at runtime (not bundled into single-file)
-Source: "{#PublishDir}\D3DCompiler_47_cor3.dll";          DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\PenImc_cor3.dll";                  DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\PresentationNative_cor3.dll";      DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\vcruntime140_cor3.dll";             DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\wpfgfx_cor3.dll";                  DestDir: "{app}"; Flags: ignoreversion
+; Runtime assemblies required alongside the exe
+Source: "{#PublishDir}\Microsoft.Windows.SDK.NET.dll";              DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\System.Security.Cryptography.ProtectedData.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\System.Speech.dll";                          DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\WinRT.Runtime.dll";                          DestDir: "{app}"; Flags: ignoreversion
 
 ; Config files — never overwrite if user already configured them
 Source: "{#PublishDir}\ha-config.json";            DestDir: "{app}"; Flags: onlyifdoesntexist
