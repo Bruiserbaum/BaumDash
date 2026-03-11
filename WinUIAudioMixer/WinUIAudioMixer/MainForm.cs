@@ -113,6 +113,9 @@ public sealed class MainForm : Form
         // Wire DWM dark title bar + save window state on close
         Load        += OnLoad;
         FormClosing += OnFormClosing;
+
+        // Log power state changes (sleep / wake) which are a known crash trigger
+        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
     }
 
     // ── Initialisation ────────────────────────────────────────────────────────
@@ -377,6 +380,7 @@ public sealed class MainForm : Form
 
     private async void OnLoad(object? sender, EventArgs e)
     {
+        Services.CrashLogger.Info("MainForm loaded — starting services");
         // Register auto-start by default if not already set
         EnsureAutoStart();
 
@@ -477,8 +481,35 @@ public sealed class MainForm : Form
         // Application.Run), so callbacks can arrive on a ThreadPool MTA thread.
         // COM audio objects are STA-bound — always marshal to the UI thread.
         if (InvokeRequired) { BeginInvoke(OnAudioChanged); return; }
-        _devicePanel?.LoadDevices();
-        _volumePanel?.LoadSessions();
+        Services.CrashLogger.Info("Audio device/session change — reloading panels");
+        try
+        {
+            _devicePanel?.LoadDevices();
+            _volumePanel?.LoadSessions();
+        }
+        catch (Exception ex)
+        {
+            Services.CrashLogger.Error("Exception in OnAudioChanged", ex);
+        }
+    }
+
+    private void OnPowerModeChanged(object sender, Microsoft.Win32.PowerModeChangedEventArgs e)
+    {
+        Services.CrashLogger.Info($"Power mode changed: {e.Mode}");
+        if (e.Mode == Microsoft.Win32.PowerModes.Resume)
+        {
+            // Wake from sleep — re-enumerate audio devices which are a common crash point
+            Services.CrashLogger.Info("System resumed from sleep — refreshing audio");
+            try
+            {
+                if (InvokeRequired) BeginInvoke(() => OnAudioChanged());
+                else                OnAudioChanged();
+            }
+            catch (Exception ex)
+            {
+                Services.CrashLogger.Error("Exception refreshing audio after sleep resume", ex);
+            }
+        }
     }
 
     private void ShowUpdateButton(Services.UpdateReleaseInfo release)
@@ -618,11 +649,13 @@ public sealed class MainForm : Form
         // Allow exit when explicitly requested (tray Exit item) or triggered by Application.Exit() (import restart)
         if (!_exitRequested && e.CloseReason != CloseReason.ApplicationExitCall)
         {
+            Services.CrashLogger.Info($"Close intercepted (reason={e.CloseReason}) — hiding to tray");
             e.Cancel = true;
             HideToTray();
         }
         else
         {
+            Services.CrashLogger.Info($"Application exiting (reason={e.CloseReason}, exitRequested={_exitRequested})");
             if (_trayIcon != null)
             {
                 _trayIcon.Visible = false;
@@ -883,6 +916,7 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
+            Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             _audioNotifySvc.Dispose();
             _discordSvc    .Dispose();
             _haSvc         ?.Dispose();

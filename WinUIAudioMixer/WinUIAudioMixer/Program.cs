@@ -13,13 +13,22 @@ static class Program
         Application.SetCompatibleTextRenderingDefault(false);
         Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
 
+        Services.CrashLogger.SessionStart();
+
         // Catch UI-thread exceptions and restart the process
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-        Application.ThreadException += (_, _) => RestartAfterCrash();
+        Application.ThreadException += (_, e) =>
+        {
+            Services.CrashLogger.Fatal("Unhandled UI-thread exception — restarting", e.Exception);
+            RestartAfterCrash();
+        };
 
         // Catch non-UI-thread exceptions that would otherwise terminate the process
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
+            var ex = e.ExceptionObject as Exception;
+            Services.CrashLogger.Fatal(
+                $"Unhandled non-UI exception (terminating={e.IsTerminating})", ex);
             if (e.IsTerminating) RestartAfterCrash();
         };
 

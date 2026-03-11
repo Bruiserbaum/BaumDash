@@ -37,19 +37,26 @@ public sealed class AudioNotificationService : IMMNotificationClient, IAudioSess
 
     private void RegisterSessionNotificationsForDefaultDevice()
     {
-        CleanupSessionManager();
-        if (_deviceEnumerator is null) return;
+        try
+        {
+            CleanupSessionManager();
+            if (_deviceEnumerator is null) return;
 
-        _deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out var device);
-        _defaultDevice = device;
+            _deviceEnumerator.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out var device);
+            _defaultDevice = device;
 
-        var iid = typeof(IAudioSessionManager2).GUID;
-        device.Activate(ref iid, CLSCTX.InprocServer, IntPtr.Zero, out var managerObj);
-        _sessionManager = (IAudioSessionManager2)managerObj;
+            var iid = typeof(IAudioSessionManager2).GUID;
+            device.Activate(ref iid, CLSCTX.InprocServer, IntPtr.Zero, out var managerObj);
+            _sessionManager = (IAudioSessionManager2)managerObj;
 
-        var ptr = Marshal.GetComInterfaceForObject(this, typeof(IAudioSessionNotification));
-        try { _sessionManager.RegisterSessionNotification(ptr); }
-        finally { Marshal.Release(ptr); }
+            var ptr = Marshal.GetComInterfaceForObject(this, typeof(IAudioSessionNotification));
+            try { _sessionManager.RegisterSessionNotification(ptr); }
+            finally { Marshal.Release(ptr); }
+        }
+        catch (Exception ex)
+        {
+            CrashLogger.Error("RegisterSessionNotificationsForDefaultDevice failed", ex);
+        }
     }
 
     private void CleanupSessionManager()
@@ -79,17 +86,25 @@ public sealed class AudioNotificationService : IMMNotificationClient, IAudioSess
         // on the STA thread. Post to the SynchronizationContext so all COM work stays on the UI thread.
         if (flow == EDataFlow.Render && role == ERole.Multimedia)
         {
+            CrashLogger.Info($"Default audio device changed → {defaultDeviceId}");
             _syncCtx.Post(_ =>
             {
-                RegisterSessionNotificationsForDefaultDevice();
-                _onChange();
+                try
+                {
+                    RegisterSessionNotificationsForDefaultDevice();
+                    _onChange();
+                }
+                catch (Exception ex)
+                {
+                    CrashLogger.Error("Exception re-registering sessions after device change", ex);
+                }
             }, null);
         }
         return 0;
     }
-    public int OnDeviceAdded(string id) { NotifyChanged(); return 0; }
-    public int OnDeviceRemoved(string id) { NotifyChanged(); return 0; }
-    public int OnDeviceStateChanged(string id, DeviceState state) { NotifyChanged(); return 0; }
+    public int OnDeviceAdded(string id) { CrashLogger.Info($"Audio device added: {id}"); NotifyChanged(); return 0; }
+    public int OnDeviceRemoved(string id) { CrashLogger.Info($"Audio device removed: {id}"); NotifyChanged(); return 0; }
+    public int OnDeviceStateChanged(string id, DeviceState state) { CrashLogger.Info($"Audio device state changed: {id} → {state}"); NotifyChanged(); return 0; }
     public int OnPropertyValueChanged(string id, PROPERTYKEY key) => 0;
 
     // IAudioSessionNotification
