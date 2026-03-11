@@ -147,10 +147,10 @@ public sealed class MediaPanel : UserControl
         g.DrawString(artist, AppTheme.FontMediaSub, artistBrush, artistRect, artistFmt);
 
         // ── Separator before clock ────────────────────────────────────────────
-        int divY = ClientSize.Height / 2 + 60;
+        int divY = 430;
         g.DrawLine(sepPen, 16, divY, ClientSize.Width - 16, divY);
 
-        // ── Clock — centred in the lower half ─────────────────────────────────
+        // ── Clock ─────────────────────────────────────────────────────────────
         var now  = DateTime.Now;
         string time = now.ToString("h:mm:ss tt");
         string date = now.ToString("dddd, MMMM d");
