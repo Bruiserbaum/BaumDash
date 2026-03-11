@@ -86,6 +86,9 @@ public sealed class SettingsDialog : Form
 
         public Panel Content => _content;
 
+        // Tracks whether the cursor is physically over this panel (set via Enter/Leave on all children).
+        private bool _mouseIsOver;
+
         public WideScrollPanel(int width, int height)
         {
             Size      = new Size(width, height);
@@ -103,19 +106,51 @@ public sealed class SettingsDialog : Form
                 Location    = new Point(width - VsbW, 0),
                 Size        = new Size(VsbW, height),
                 SmallChange = 30,
-                LargeChange = height,
+                LargeChange = Math.Max(1, height),
                 Minimum     = 0,
-                Maximum     = 0,
+                Maximum     = Math.Max(1, height),   // valid placeholder; real value set by SetContentHeight
                 Enabled     = false,
             };
             AppTheme.ApplyDarkScrollBar(_vsb);
             _vsb.ValueChanged += (_, _) => _content.Top = -_vsb.Value;
+
+            // Subscribe mouse-wheel and hover tracking to the content panel;
+            // ControlAdded propagates to every child that is added later.
+            _content.MouseWheel  += OnMouseWheel;
+            _content.MouseEnter  += OnEnter;
+            _content.MouseLeave  += OnLeave;
+            _content.ControlAdded += (_, e) => { if (e.Control != null) SubscribeChild(e.Control); };
+            MouseEnter += OnEnter;
+            MouseLeave += OnLeave;
 
             Controls.Add(_content);
             Controls.Add(_vsb);
             Application.AddMessageFilter(this);
             Disposed += (_, _) => Application.RemoveMessageFilter(this);
         }
+
+        private void OnEnter(object? sender, EventArgs e) => _mouseIsOver = true;
+        private void OnLeave(object? sender, EventArgs e)
+        {
+            // Only clear when the cursor has truly left the whole panel.
+            _mouseIsOver = IsHandleCreated &&
+                           ClientRectangle.Contains(PointToClient(Cursor.Position));
+        }
+
+        private void SubscribeChild(Control c)
+        {
+            // Multiline text boxes scroll their own content — don't intercept their wheel.
+            bool selfScrolls = c is TextBox { Multiline: true } or ListBox or ComboBox;
+            if (!selfScrolls)
+                c.MouseWheel += OnMouseWheel;
+            c.MouseEnter  += OnEnter;
+            c.MouseLeave  += OnLeave;
+            c.ControlAdded += (_, e) => { if (e.Control != null) SubscribeChild(e.Control); };
+            foreach (Control child in c.Controls)
+                SubscribeChild(child);
+        }
+
+        private void OnMouseWheel(object? sender, MouseEventArgs e) => ScrollBy(e.Delta);
 
         /// <summary>Call once after adding all child controls to set the scrollable range.</summary>
         public void SetContentHeight(int h)
@@ -125,7 +160,7 @@ public sealed class SettingsDialog : Form
             if (maxScroll <= 0)
             {
                 _vsb.Value   = 0;
-                _vsb.Maximum = 0;
+                _vsb.Maximum = _vsb.LargeChange;  // keep Maximum >= LargeChange so VScrollBar stays valid
                 _vsb.Enabled = false;
             }
             else
@@ -135,40 +170,34 @@ public sealed class SettingsDialog : Form
             }
         }
 
-        bool IMessageFilter.PreFilterMessage(ref Message m)
+        private void ScrollBy(int delta)
         {
-            const int WM_MOUSEWHEEL  = 0x020A;
-            const int WM_POINTERWHEEL = 0x024E;  // touch / stylus wheel equivalent
-            bool isWheel = m.Msg == WM_MOUSEWHEEL || m.Msg == WM_POINTERWHEEL;
-            if (!isWheel || !_vsb.Enabled) return false;
-
-            // Primary check: the message target is a child of this panel
-            // (i.e. focus is currently inside this scroll area).
-            bool inPanel = false;
-            var  target  = Control.FromHandle(m.HWnd);
-            for (Control? c = target; c != null; c = c.Parent)
-            {
-                if (ReferenceEquals(c, this)) { inPanel = true; break; }
-            }
-
-            // Fallback: cursor is physically over this panel even though focus
-            // may be elsewhere — common when the user just moves the mouse and
-            // scrolls without clicking first.
-            if (!inPanel && IsHandleCreated)
-            {
-                try { inPanel = RectangleToScreen(ClientRectangle).Contains(Cursor.Position); }
-                catch { /* handle not yet mapped to screen — skip */ }
-            }
-
-            if (!inPanel) return false;
-
-            int delta  = (short)(m.WParam.ToInt64() >> 16);
+            if (!_vsb.Enabled) return;
             int step   = _vsb.SmallChange * 3;
             int newVal = Math.Clamp(_vsb.Value + (delta > 0 ? -step : step),
                                     _vsb.Minimum,
                                     _vsb.Maximum - _vsb.LargeChange + 1);
             _vsb.Value = newVal;
-            return true;
+        }
+
+        bool IMessageFilter.PreFilterMessage(ref Message m)
+        {
+            const int WM_MOUSEWHEEL   = 0x020A;
+            const int WM_POINTERWHEEL = 0x024E;  // touch / stylus wheel equivalent
+            bool isWheel = m.Msg == WM_MOUSEWHEEL || m.Msg == WM_POINTERWHEEL;
+            if (!isWheel || !_vsb.Enabled) return false;
+
+            // Check 1: focused control is a descendant of this panel.
+            var target = Control.FromHandle(m.HWnd);
+            for (Control? c = target; c != null; c = c.Parent)
+            {
+                if (ReferenceEquals(c, this)) { ScrollBy((short)(m.WParam.ToInt64() >> 16)); return true; }
+            }
+
+            // Check 2: cursor was tracked as being over this panel via MouseEnter/Leave.
+            if (_mouseIsOver) { ScrollBy((short)(m.WParam.ToInt64() >> 16)); return true; }
+
+            return false;
         }
     }
 
