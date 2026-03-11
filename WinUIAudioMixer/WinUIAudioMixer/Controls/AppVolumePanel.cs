@@ -17,7 +17,7 @@ public sealed class AppVolumePanel : UserControl
     private readonly System.Windows.Forms.Timer _refreshTimer;
 
     // Weather
-    private const int WeatherH = 126; // height reserved at bottom for weather footer
+    private const int WeatherH = 148; // height reserved at bottom for weather footer
     private System.Windows.Forms.Timer? _weatherTimer;
     private WeatherService?  _weatherSvc;
     private WeatherSnapshot? _weather;
