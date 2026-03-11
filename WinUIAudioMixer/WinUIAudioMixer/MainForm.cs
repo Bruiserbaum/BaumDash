@@ -356,8 +356,8 @@ public sealed class MainForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
         _devicePanel  = new AudioDevicePanel(_audioDeviceSvc) { Dock = DockStyle.Fill };
-        _volumePanel  = new AppVolumePanel(_audioSessionSvc)    { Dock = DockStyle.Fill };
-        _mediaPanel   = new MediaPanel(_weatherSvc)             { Dock = DockStyle.Fill };
+        _volumePanel  = new AppVolumePanel(_audioSessionSvc, _weatherSvc) { Dock = DockStyle.Fill };
+        _mediaPanel   = new MediaPanel()                                 { Dock = DockStyle.Fill };
         _discordPanel = new DiscordPanel(_discordSvc, _aiSvc, _chatGptSvc, _calSvc, _haSvc) { Dock = DockStyle.Fill };
 
         // Media control event wiring
@@ -472,7 +472,7 @@ public sealed class MainForm : Form
         try
         {
             var newWeather = Services.WeatherService.LoadAndCreate();
-            _mediaPanel?.UpdateWeatherService(newWeather);
+            _volumePanel?.UpdateWeatherService(newWeather);
         }
         catch { }
 
