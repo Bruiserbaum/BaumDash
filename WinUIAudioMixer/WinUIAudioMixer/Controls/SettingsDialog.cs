@@ -55,6 +55,9 @@ public sealed class SettingsDialog : Form
     private TextBox?  _weatherLon;
     private ComboBox? _weatherUnit;
 
+    // Calendar scroll view
+    private WideScrollPanel? _calScrollView;
+
     // ── Tab state ─────────────────────────────────────────────────────────────
 
     private readonly Button[] _tabBtns;
@@ -62,10 +65,91 @@ public sealed class SettingsDialog : Form
 
     // ── Layout constants ──────────────────────────────────────────────────────
 
-    private const int DlgW      = 680;  // dialog client width
-    private const int FieldW    = 636;  // width of a full-row text field (DlgW - 16*2 - 12)
+    private const int DlgW      = 720;  // dialog client width
+    private const int VsbW      = 28;   // touch-friendly vertical scrollbar width
+    private const int FieldW    = 676;  // width of a full-row text field (DlgW - 16*2 - 12)
     private const int FieldX    = 16;   // left margin for controls
     private const int TabCount  = 7;
+    private const int CalEntryContentW = DlgW - 12 - VsbW; // usable width inside calendar scroll panel
+
+    // ── Touch-friendly scroll panel ───────────────────────────────────────────
+
+    /// <summary>
+    /// A Panel with a wide (28 px) vertical scrollbar instead of the system default (17 px).
+    /// Handles mouse wheel via Application.AddMessageFilter so wheel events on child
+    /// TextBoxes / ComboBoxes are still routed to this container.
+    /// </summary>
+    private sealed class WideScrollPanel : Panel, IMessageFilter
+    {
+        private readonly Panel      _content;
+        private readonly VScrollBar _vsb;
+
+        public Panel Content => _content;
+
+        public WideScrollPanel(int width, int height)
+        {
+            Size      = new Size(width, height);
+            BackColor = Color.Transparent;
+
+            _content = new Panel
+            {
+                Location  = new Point(0, 0),
+                Size      = new Size(width - VsbW, height),
+                BackColor = Color.Transparent,
+            };
+
+            _vsb = new VScrollBar
+            {
+                Location    = new Point(width - VsbW, 0),
+                Size        = new Size(VsbW, height),
+                SmallChange = 30,
+                LargeChange = height,
+                Minimum     = 0,
+                Maximum     = 0,
+                Enabled     = false,
+            };
+            AppTheme.ApplyDarkScrollBar(_vsb);
+            _vsb.ValueChanged += (_, _) => _content.Top = -_vsb.Value;
+
+            Controls.Add(_content);
+            Controls.Add(_vsb);
+            Application.AddMessageFilter(this);
+            Disposed += (_, _) => Application.RemoveMessageFilter(this);
+        }
+
+        /// <summary>Call once after adding all child controls to set the scrollable range.</summary>
+        public void SetContentHeight(int h)
+        {
+            _content.Height = Math.Max(h, Height);
+            int maxScroll = Math.Max(0, h - Height);
+            if (maxScroll <= 0)
+            {
+                _vsb.Value   = 0;
+                _vsb.Maximum = 0;
+                _vsb.Enabled = false;
+            }
+            else
+            {
+                _vsb.Maximum = maxScroll + _vsb.LargeChange - 1;
+                _vsb.Enabled = true;
+            }
+        }
+
+        bool IMessageFilter.PreFilterMessage(ref Message m)
+        {
+            const int WM_MOUSEWHEEL = 0x020A;
+            if (m.Msg != WM_MOUSEWHEEL || !_vsb.Enabled) return false;
+            if (!RectangleToScreen(ClientRectangle).Contains(Cursor.Position)) return false;
+
+            int delta  = (short)(((long)m.WParam >> 16) & 0xFFFF);
+            int step   = _vsb.SmallChange * 3;
+            int newVal = Math.Clamp(_vsb.Value + (delta > 0 ? -step : step),
+                                    _vsb.Minimum,
+                                    _vsb.Maximum - _vsb.LargeChange + 1);
+            _vsb.Value = newVal;
+            return true;
+        }
+    }
 
     // ── Constructor ───────────────────────────────────────────────────────────
 
@@ -547,15 +631,9 @@ public sealed class SettingsDialog : Form
         AddHint(p, "Google Calendar → ⋮ → Settings → Integrate calendar → Secret address in iCal format", ref y);
 
         // Scrollable container for calendar entry rows
-        _calEntriesContainer = new Panel
-        {
-            AutoScroll = true,
-            BackColor  = Color.Transparent,
-            Location   = new Point(0, y),
-            Size       = new Size(DlgW - 12, 300),
-        };
-        AppTheme.ApplyDarkScrollBar(_calEntriesContainer);
-        p.Controls.Add(_calEntriesContainer);
+        _calScrollView = new WideScrollPanel(DlgW - 12, 300) { Location = new Point(0, y) };
+        _calEntriesContainer = _calScrollView.Content;
+        p.Controls.Add(_calScrollView);
 
         var btnAdd = new Button
         {
@@ -599,7 +677,7 @@ public sealed class SettingsDialog : Form
             PlaceholderText = "https://calendar.google.com/calendar/ical/…/basic.ics",
             Text            = url,
             Location        = new Point(152, rowY),
-            Size            = new Size(DlgW - 152 - 50, 26),
+            Size            = new Size(CalEntryContentW - 152 - 36, 26),
         };
 
         var btnRemove = new Button
@@ -610,7 +688,7 @@ public sealed class SettingsDialog : Form
             BackColor = Color.Transparent,
             FlatStyle = FlatStyle.Flat,
             Cursor    = Cursors.Hand,
-            Location  = new Point(DlgW - 48, rowY),
+            Location  = new Point(CalEntryContentW - 32, rowY),
             Size      = new Size(28, 26),
             FlatAppearance = { BorderSize = 0, MouseOverBackColor = AppTheme.Danger },
         };
@@ -627,7 +705,7 @@ public sealed class SettingsDialog : Form
         };
 
         _calEntriesContainer.Controls.AddRange(new Control[] { nameBox, urlBox, btnRemove });
-        _calEntriesContainer.AutoScrollMinSize = new Size(0, (_calEntries.Count) * 62);
+        _calScrollView?.SetContentHeight(_calEntries.Count * 62);
     }
 
     private void RelayoutCalendarRows()
@@ -641,22 +719,16 @@ public sealed class SettingsDialog : Form
             var btn = _calEntriesContainer.Controls
                 .OfType<Button>()
                 .ElementAtOrDefault(i);
-            if (btn != null) btn.Location = new Point(DlgW - 48, rowY);
+            if (btn != null) btn.Location = new Point(CalEntryContentW - 32, rowY);
         }
-        _calEntriesContainer.AutoScrollMinSize = new Size(0, _calEntries.Count * 62);
+        _calScrollView?.SetContentHeight(_calEntries.Count * 62);
     }
 
     private (CheckBox autoStart, CheckBox closeToTray) BuildGeneralPanel(Panel p)
     {
-        var scroll = new Panel
-        {
-            AutoScroll = true,
-            Location   = new Point(0, 0),
-            Size       = new Size(DlgW, 560),
-            BackColor  = Color.Transparent,
-        };
-        AppTheme.ApplyDarkScrollBar(scroll);
-        p.Controls.Add(scroll);
+        var sv     = new WideScrollPanel(DlgW, 560);
+        p.Controls.Add(sv);
+        var scroll = sv.Content;
 
         int y = 8;
 
@@ -814,7 +886,7 @@ public sealed class SettingsDialog : Form
         y += 2;
         AddSectionLabel(scroll, "GPU PLATFORM  (Instant Replay button)", ref y);
 
-        var gpuRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(DlgW, 26) };
+        var gpuRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(scroll.Width, 26) };
         _rbGpuAmd    = MakeRadioButton("AMD  (ReLive / Adrenalin — Ctrl+Shift+S)", gpuRow, FieldX,       0);
         _rbGpuNvidia = MakeRadioButton("NVIDIA  (ShadowPlay — Alt+F10)",           gpuRow, FieldX + 310, 0);
         _rbGpuAmd.Checked = true;
@@ -826,7 +898,7 @@ public sealed class SettingsDialog : Form
         y += 2;
         AddSectionLabel(scroll, "LAYOUT PROFILE", ref y);
 
-        var layoutRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(DlgW, 26) };
+        var layoutRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(scroll.Width, 26) };
         _rbLayoutAuto  = MakeRadioButton("Auto-detect",   layoutRow, FieldX,       0);
         _rbLayout1920  = MakeRadioButton("1920 × 720",    layoutRow, FieldX + 150, 0);
         _rbLayout2560  = MakeRadioButton("2560 × 720",    layoutRow, FieldX + 310, 0);
@@ -839,7 +911,7 @@ public sealed class SettingsDialog : Form
         y += 2;
         AddSectionLabel(scroll, "THEME", ref y);
 
-        var themeRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(DlgW, 26) };
+        var themeRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(scroll.Width, 26) };
         _rbDark  = MakeRadioButton("Dark (default)", themeRow, FieldX,       0);
         _rbLight = MakeRadioButton("Light",          themeRow, FieldX + 130, 0);
         _rbDark.Checked = true;
@@ -851,7 +923,7 @@ public sealed class SettingsDialog : Form
         y += 2;
         AddSectionLabel(scroll, "RELEASE CHANNEL", ref y);
 
-        var channelRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(DlgW, 26) };
+        var channelRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(scroll.Width, 26) };
         _rbChannelStable = MakeRadioButton("Stable  (recommended)", channelRow, FieldX,       0);
         _rbChannelDev    = MakeRadioButton("Dev  (preview builds)", channelRow, FieldX + 190, 0);
         _rbChannelStable.Checked = true;
@@ -1086,7 +1158,7 @@ public sealed class SettingsDialog : Form
         y += 28;
         AddHint(scroll, "0% = image fully visible, 100% = panel covers image completely.", ref y, 22);
 
-        scroll.AutoScrollMinSize = new Size(0, y + 20);
+        sv.SetContentHeight(y + 20);
 
         return (chkAutoStart, chkCloseToTray);
     }
