@@ -111,7 +111,7 @@ Name: "{group}\Uninstall {#AppName}";         Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}";             Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall
 
 [UninstallDelete]
 ; Remove runtime-created files on uninstall

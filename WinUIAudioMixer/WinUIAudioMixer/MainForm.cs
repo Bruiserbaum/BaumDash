@@ -539,7 +539,7 @@ public sealed class MainForm : Form
         var result = MessageBox.Show(this,
             $"BaumDash {release.Version} is available  (current: {Services.UpdateService.CurrentVersion}).\n\n" +
             "Download and install now?\n" +
-            "BaumDash will close and the installer will open.",
+            "BaumDash will close and relaunch automatically after updating.",
             "Update Available",
             MessageBoxButtons.YesNo,
             MessageBoxIcon.Information);
@@ -594,6 +594,7 @@ public sealed class MainForm : Form
         {
             try
             {
+                _exitRequested = true; // prevent close-to-tray interception during update exit
                 await Services.UpdateService.DownloadAndInstallAsync(release, progress, cts.Token);
             }
             catch (OperationCanceledException) { dlg.Close(); }
