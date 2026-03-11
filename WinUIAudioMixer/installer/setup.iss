@@ -1,12 +1,12 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.6.2"
-#define AppVersionFull "2.6.2"
+#define AppVersion   "2.6.3"
+#define AppVersionFull "2.6.3-dev"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
 
 [Setup]
-AppId={{A3F2E1D0-C4B5-4678-8901-BCDEF2345678}
+AppId={{F1E2D3C4-B5A6-4789-9ABC-DEF012345678}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
@@ -111,7 +111,7 @@ Name: "{group}\Uninstall {#AppName}";         Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}";             Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall
 
 [UninstallDelete]
 ; Remove runtime-created files on uninstall
