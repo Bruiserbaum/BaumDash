@@ -199,11 +199,11 @@ public sealed class AudioDevicePanel : UserControl
         g.DrawString("AUDIO DEVICES",  AppTheme.FontPanelHeader, muted, x, 18);
         g.DrawLine(sep, x, 50, x + w, 50);
 
-        g.DrawString("Microphone",     AppTheme.FontPanelSub, sub, x, 62);
+        g.DrawString("Microphone",     _fSmall, sub, x, 62);
         g.DrawLine(sep, x, 216, x + w, 216);
 
-        g.DrawString("Speaker Output", AppTheme.FontPanelSub, sub, x, 228);
-        g.DrawString("Master Volume",  _fSmall, muted, x, 386);
+        g.DrawString("Speaker Output", _fSmall, sub, x, 228);
+        g.DrawString("Master Volume",  _fSmall, muted, x, 376);
         g.DrawLine(sep, x, 462, x + w, 462);
         g.DrawString(_replayLabel,     AppTheme.FontPanelSub, sub, x, 474);
     }
