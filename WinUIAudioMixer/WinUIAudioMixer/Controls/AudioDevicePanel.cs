@@ -159,26 +159,26 @@ public sealed class AudioDevicePanel : UserControl
         if (ClientSize.Width < 10) return;
         int x = 16, w = ClientSize.Width - 32;
 
-        // Mic section: header y=18, sep y=50, label y=58
-        // Selector y=88, mute y=140
-        _micPrevBtn      .SetBounds(x,           88,  30,      44);
-        _micNameLabel    .SetBounds(x + 34,      88,  w - 68,  44);
-        _micNextBtn      .SetBounds(x + w - 30,  88,  30,      44);
-        _micMuteButton   .SetBounds(x,          140,  w,       44);
+        // Mic section: header y=18, sep y=50, label y=62
+        // Selector y=96, mute y=156
+        _micPrevBtn      .SetBounds(x,           96,  30,      44);
+        _micNameLabel    .SetBounds(x + 34,      96,  w - 68,  44);
+        _micNextBtn      .SetBounds(x + w - 30,  96,  30,      44);
+        _micMuteButton   .SetBounds(x,          156,  w,       44);
 
-        // Speaker section: sep y=196, label y=204
-        // Selector y=234, mute y=286
-        _speakerPrevBtn  .SetBounds(x,          234,  30,      44);
-        _speakerNameLabel.SetBounds(x + 34,     234,  w - 68,  44);
-        _speakerNextBtn  .SetBounds(x + w - 30, 234,  30,      44);
-        _speakerMuteButton.SetBounds(x,         286,  w,       44);
+        // Speaker section: sep y=216, label y=228
+        // Selector y=262, mute y=322
+        _speakerPrevBtn  .SetBounds(x,          262,  30,      44);
+        _speakerNameLabel.SetBounds(x + 34,     262,  w - 68,  44);
+        _speakerNextBtn  .SetBounds(x + w - 30, 262,  30,      44);
+        _speakerMuteButton.SetBounds(x,         322,  w,       44);
 
-        // Master volume: label y=342, slider y=366
-        _masterSlider    .SetBounds(x,          366,  w - 56,  34);
-        _masterPctLabel  .SetBounds(x + w - 54, 364,  54,      36);
+        // Master volume: label y=386, slider y=412
+        _masterSlider    .SetBounds(x,          412,  w - 56,  34);
+        _masterPctLabel  .SetBounds(x + w - 54, 410,  54,      36);
 
-        // Replay section: sep y=416, label y=424, button y=454
-        _replayButton    .SetBounds(x,          454,  w,       44);
+        // Replay section: sep y=462, label y=474, button y=506
+        _replayButton    .SetBounds(x,          506,  w,       44);
     }
 
     // ── Painting ──────────────────────────────────────────────────────────────
@@ -199,13 +199,13 @@ public sealed class AudioDevicePanel : UserControl
         g.DrawString("AUDIO DEVICES",  AppTheme.FontPanelHeader, muted, x, 18);
         g.DrawLine(sep, x, 50, x + w, 50);
 
-        g.DrawString("Microphone",     AppTheme.FontPanelSub, sub, x, 58);
-        g.DrawLine(sep, x, 196, x + w, 196);
+        g.DrawString("Microphone",     AppTheme.FontPanelSub, sub, x, 62);
+        g.DrawLine(sep, x, 216, x + w, 216);
 
-        g.DrawString("Speaker Output", AppTheme.FontPanelSub, sub, x, 204);
-        g.DrawString("Master Volume",  _fSmall, muted, x, 342);
-        g.DrawLine(sep, x, 416, x + w, 416);
-        g.DrawString(_replayLabel,     AppTheme.FontPanelSub, sub, x, 424);
+        g.DrawString("Speaker Output", AppTheme.FontPanelSub, sub, x, 228);
+        g.DrawString("Master Volume",  _fSmall, muted, x, 386);
+        g.DrawLine(sep, x, 462, x + w, 462);
+        g.DrawString(_replayLabel,     AppTheme.FontPanelSub, sub, x, 474);
     }
 
     // ── Data loading ──────────────────────────────────────────────────────────
