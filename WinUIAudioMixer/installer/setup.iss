@@ -1,6 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.5.4"
-#define AppVersionFull "2.5.4-dev"
+#define AppVersion   "2.5.5"
+#define AppVersionFull "2.5.5-dev"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -20,6 +20,7 @@ Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
+CloseApplications=yes
 MinVersion=10.0.22621
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
