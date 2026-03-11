@@ -1,6 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.5.5"
-#define AppVersionFull "2.5.5-dev"
+#define AppVersion   "2.5.6"
+#define AppVersionFull "2.5.6-dev"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -87,7 +87,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription
 
 [Files]
 ; Main application (single-file publish — all managed code bundled into the exe)
-Source: "{#PublishDir}\{#AppExeName}";                    DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\{#AppExeName}";                    DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete
 ; Native WPF/DirectX helpers required at runtime (not bundled into single-file)
 Source: "{#PublishDir}\D3DCompiler_47_cor3.dll";          DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PublishDir}\PenImc_cor3.dll";                  DestDir: "{app}"; Flags: ignoreversion
