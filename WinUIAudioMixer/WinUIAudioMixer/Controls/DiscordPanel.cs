@@ -87,10 +87,10 @@ public sealed class DiscordPanel : UserControl
 
     // Layout constants
     private const int TabBarH     = 54;
-    private const int VoiceListY  = 108 + TabBarH;             // 162
-    private const int VoiceListH  = 200;
-    private const int ChatHeaderY = VoiceListY + VoiceListH + 8; // 356
-    private const int ChatY       = ChatHeaderY + 24;            // 380
+    private const int VoiceListY  = 108 + TabBarH;              // 162
+    private const int VoiceListH  = 160;
+    private const int ChatHeaderY = VoiceListY + VoiceListH + 12; // 334
+    private const int ChatY       = ChatHeaderY + 30;             // 364
 
     public DiscordPanel(DiscordService discord, AnythingLLMService? aiSvc = null, ChatGptService? chatGptSvc = null, GoogleCalendarService? calSvc = null, HomeAssistantService? haSvc = null)
     {

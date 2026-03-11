@@ -45,7 +45,7 @@ public sealed class AudioDevicePanel : UserControl
 
     // Larger fonts for this panel only
     private static readonly Font _fSmall   = new("Segoe UI", 13f, FontStyle.Regular);
-    private static readonly Font _fControl = new("Segoe UI", 14f, FontStyle.Regular);
+    private static readonly Font _fControl = new("Segoe UI", 12f, FontStyle.Regular);
     private static readonly Font _fButton  = new("Segoe UI", 13f, FontStyle.Bold);
 
     public AudioDevicePanel(AudioDeviceService deviceService)
@@ -161,16 +161,16 @@ public sealed class AudioDevicePanel : UserControl
 
         // Mic section: header y=18, sep y=50, label y=58
         // Selector y=88, mute y=140
-        _micPrevBtn      .SetBounds(x,           88,  44,      44);
-        _micNameLabel    .SetBounds(x + 48,      88,  w - 96,  44);
-        _micNextBtn      .SetBounds(x + w - 44,  88,  44,      44);
+        _micPrevBtn      .SetBounds(x,           88,  30,      44);
+        _micNameLabel    .SetBounds(x + 34,      88,  w - 68,  44);
+        _micNextBtn      .SetBounds(x + w - 30,  88,  30,      44);
         _micMuteButton   .SetBounds(x,          140,  w,       44);
 
         // Speaker section: sep y=196, label y=204
         // Selector y=234, mute y=286
-        _speakerPrevBtn  .SetBounds(x,          234,  44,      44);
-        _speakerNameLabel.SetBounds(x + 48,     234,  w - 96,  44);
-        _speakerNextBtn  .SetBounds(x + w - 44, 234,  44,      44);
+        _speakerPrevBtn  .SetBounds(x,          234,  30,      44);
+        _speakerNameLabel.SetBounds(x + 34,     234,  w - 68,  44);
+        _speakerNextBtn  .SetBounds(x + w - 30, 234,  30,      44);
         _speakerMuteButton.SetBounds(x,         286,  w,       44);
 
         // Master volume: label y=342, slider y=366
@@ -465,7 +465,7 @@ public sealed class AudioDevicePanel : UserControl
         ForeColor    = fg,
         BackColor    = Color.Transparent,
         AutoSize     = false,
-        AutoEllipsis = true,
+        AutoEllipsis = false,
         TextAlign    = ContentAlignment.MiddleLeft,
     };
 
