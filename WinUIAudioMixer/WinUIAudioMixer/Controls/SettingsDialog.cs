@@ -137,11 +137,32 @@ public sealed class SettingsDialog : Form
 
         bool IMessageFilter.PreFilterMessage(ref Message m)
         {
-            const int WM_MOUSEWHEEL = 0x020A;
-            if (m.Msg != WM_MOUSEWHEEL || !_vsb.Enabled) return false;
-            if (!RectangleToScreen(ClientRectangle).Contains(Cursor.Position)) return false;
+            const int WM_MOUSEWHEEL  = 0x020A;
+            const int WM_POINTERWHEEL = 0x024E;  // touch / stylus wheel equivalent
+            bool isWheel = m.Msg == WM_MOUSEWHEEL || m.Msg == WM_POINTERWHEEL;
+            if (!isWheel || !_vsb.Enabled) return false;
 
-            int delta  = (short)(((long)m.WParam >> 16) & 0xFFFF);
+            // Primary check: the message target is a child of this panel
+            // (i.e. focus is currently inside this scroll area).
+            bool inPanel = false;
+            var  target  = Control.FromHandle(m.HWnd);
+            for (Control? c = target; c != null; c = c.Parent)
+            {
+                if (ReferenceEquals(c, this)) { inPanel = true; break; }
+            }
+
+            // Fallback: cursor is physically over this panel even though focus
+            // may be elsewhere — common when the user just moves the mouse and
+            // scrolls without clicking first.
+            if (!inPanel && IsHandleCreated)
+            {
+                try { inPanel = RectangleToScreen(ClientRectangle).Contains(Cursor.Position); }
+                catch { /* handle not yet mapped to screen — skip */ }
+            }
+
+            if (!inPanel) return false;
+
+            int delta  = (short)(m.WParam.ToInt64() >> 16);
             int step   = _vsb.SmallChange * 3;
             int newVal = Math.Clamp(_vsb.Value + (delta > 0 ? -step : step),
                                     _vsb.Minimum,
