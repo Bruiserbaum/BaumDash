@@ -8,7 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>2.5.11-dev</Version>
+    <Version>2.5.1</Version>
   </PropertyGroup>
 
   <ItemGroup>

@@ -1,12 +1,12 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.5.11"
-#define AppVersionFull "2.5.11-dev"
+#define AppVersion   "2.5.1"
+#define AppVersionFull "2.5.1"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
 
 [Setup]
-AppId={{F1E2D3C4-B5A6-4789-9ABC-DEF012345678}
+AppId={{A3F2E1D0-7B4C-4A8E-9F1D-2C5B6E3A8F90}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
