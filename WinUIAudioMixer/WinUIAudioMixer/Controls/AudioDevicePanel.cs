@@ -45,7 +45,7 @@ public sealed class AudioDevicePanel : UserControl
 
     // Larger fonts for this panel only
     private static readonly Font _fSmall   = new("Segoe UI", 13f, FontStyle.Regular);
-    private static readonly Font _fControl = new("Segoe UI", 12f, FontStyle.Regular);
+    private static readonly Font _fControl = new("Segoe UI", 10f, FontStyle.Regular);
     private static readonly Font _fButton  = new("Segoe UI", 13f, FontStyle.Bold);
 
     public AudioDevicePanel(AudioDeviceService deviceService)
@@ -465,7 +465,7 @@ public sealed class AudioDevicePanel : UserControl
         ForeColor    = fg,
         BackColor    = Color.Transparent,
         AutoSize     = false,
-        AutoEllipsis = false,
+        AutoEllipsis = true,
         TextAlign    = ContentAlignment.MiddleLeft,
     };
 

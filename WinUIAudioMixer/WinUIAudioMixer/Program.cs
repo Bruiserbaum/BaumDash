@@ -39,7 +39,7 @@ static class Program
         if (MainForm.PendingImportRestart)
         {
             try { mutex.ReleaseMutex(); } catch { }
-            try { System.Diagnostics.Process.Start(Application.ExecutablePath, "--tray"); } catch { }
+            try { System.Diagnostics.Process.Start(Application.ExecutablePath); } catch { }
         }
     }
 

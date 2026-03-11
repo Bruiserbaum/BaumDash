@@ -1613,6 +1613,7 @@ public sealed class SettingsDialog : Form
             // Restore secrets back into secure storage
             if (backup.TryGetValue(SecretsKey, out var secretsJson) && secretsJson != null)
             {
+                // New backup format — __secrets key holds serialised SecurePayload
                 var payload = JsonSerializer.Deserialize<Models.SecurePayload>(secretsJson,
                     new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (payload != null)
@@ -1620,6 +1621,61 @@ public sealed class SettingsDialog : Form
                     Services.SecureStorage.Save(payload);
                     Services.SecureStorage.Invalidate();
                 }
+            }
+            else
+            {
+                // Legacy backup format (pre-SecureStorage) — extract secrets from old plaintext entries
+                var payload = new Models.SecurePayload();
+
+                // Discord IDs were plain text files
+                if (backup.TryGetValue("discord-client-id.txt", out var did) && did != null)
+                    payload.DiscordClientId = did.Trim();
+                if (backup.TryGetValue("discord-client-secret.txt", out var dsec) && dsec != null)
+                    payload.DiscordClientSecret = dsec.Trim();
+
+                // API keys were embedded in the JSON config files
+                if (TryExtractJsonSecret(backup, "chatgpt-config.json",     "ApiKey", out var gptKey))
+                    payload.ChatGptApiKey = gptKey;
+                if (TryExtractJsonSecret(backup, "anythingllm-config.json", "ApiKey", out var aiKey))
+                    payload.AnythingLLMApiKey = aiKey;
+                if (TryExtractJsonSecret(backup, "ha-config.json",          "Token",  out var haToken))
+                    payload.HaToken = haToken;
+
+                // Calendar URLs were in gcalendar-config.json
+                if (backup.TryGetValue("gcalendar-config.json", out var calJson) && calJson != null)
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(calJson);
+                        var root = doc.RootElement;
+
+                        // Single-URL legacy format
+                        if (root.TryGetProperty("ICalUrl", out var single) || root.TryGetProperty("iCalUrl", out single))
+                        {
+                            var url = single.GetString();
+                            if (!string.IsNullOrEmpty(url))
+                                payload.Calendars.Add(new Models.CalendarEntry { Name = "Calendar", ICalUrl = url });
+                        }
+
+                        // Multi-calendar format
+                        if (root.TryGetProperty("Calendars", out var arr) || root.TryGetProperty("calendars", out arr))
+                        {
+                            foreach (var el in arr.EnumerateArray())
+                            {
+                                var name = el.TryGetProperty("Name", out var n) || el.TryGetProperty("name", out n)
+                                    ? n.GetString() ?? "Calendar" : "Calendar";
+                                var url  = el.TryGetProperty("ICalUrl", out var u) || el.TryGetProperty("iCalUrl", out u)
+                                    ? u.GetString() ?? "" : "";
+                                if (!string.IsNullOrEmpty(url))
+                                    payload.Calendars.Add(new Models.CalendarEntry { Name = name, ICalUrl = url });
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                Services.SecureStorage.Save(payload);
+                Services.SecureStorage.Invalidate();
             }
 
             MainForm.PendingImportRestart = true;
@@ -1701,6 +1757,31 @@ public sealed class SettingsDialog : Form
         _statusLabel.ForeColor = success ? AppTheme.Success : AppTheme.Danger;
         _statusLabel.Text      = msg;
         _statusLabel.Visible   = true;
+    }
+
+    /// <summary>
+    /// Extracts a single string field from a JSON file entry in a backup dictionary.
+    /// Checks both PascalCase and camelCase variants of <paramref name="fieldName"/>.
+    /// Returns true and sets <paramref name="value"/> when found.
+    /// </summary>
+    private static bool TryExtractJsonSecret(
+        Dictionary<string, string?> backup, string fileName, string fieldName, out string value)
+    {
+        value = "";
+        if (!backup.TryGetValue(fileName, out var content) || content == null) return false;
+        try
+        {
+            using var doc  = JsonDocument.Parse(content);
+            var camel = char.ToLowerInvariant(fieldName[0]) + fieldName[1..];
+            if (doc.RootElement.TryGetProperty(fieldName, out var v) ||
+                doc.RootElement.TryGetProperty(camel,     out v))
+            {
+                value = v.GetString() ?? "";
+                return !string.IsNullOrEmpty(value);
+            }
+        }
+        catch { }
+        return false;
     }
 
     private static List<HaEntity> ParseEntities(string text)
