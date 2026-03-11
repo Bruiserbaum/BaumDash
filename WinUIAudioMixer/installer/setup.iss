@@ -1,6 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.5.1"
-#define AppVersionFull "2.5.1-dev"
+#define AppVersion   "2.5.2"
+#define AppVersionFull "2.5.2-dev"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -10,7 +10,7 @@ AppId={{A3F2E1D0-7B4C-4A8E-9F1D-2C5B6E3A8F90}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=output
 OutputBaseFilename=BaumDash-Setup-{#AppVersionFull}
@@ -19,7 +19,7 @@ UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=admin
+PrivilegesRequired=lowest
 MinVersion=10.0.22621
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible

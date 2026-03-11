@@ -151,13 +151,12 @@ public static class UpdateService
 
         dst.Close();
 
-        // Launch installer with elevation (runas) so it installs to the same
-        // Program Files location as the original install, not a per-user path.
+        // Launch installer; BaumDash exits so the installer can overwrite the exe.
+        // Installs to per-user LocalAppData\Programs — no elevation needed.
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
             FileName        = tempPath,
             UseShellExecute = true,
-            Verb            = "runas",
         });
 
         Application.Exit();
