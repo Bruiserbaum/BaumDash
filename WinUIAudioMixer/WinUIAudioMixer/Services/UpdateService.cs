@@ -15,9 +15,16 @@ public static class UpdateService
     public static readonly string CurrentVersion =
         System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
 
-    private const string GitHubOwner = "Bruiserbaum";
-    private const string GitHubRepo  = "BaumDash";
-    private const string ApiUrl      = $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
+    private const string GitHubOwner    = "Bruiserbaum";
+    private const string GitHubRepo     = "BaumDash";
+    private const string ApiLatest      = $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases/latest";
+    private const string ApiAllReleases = $"https://api.github.com/repos/{GitHubOwner}/{GitHubRepo}/releases?per_page=20";
+
+    /// <summary>
+    /// Release channel — set from GeneralConfig at startup.
+    /// "stable" = production releases only (default); "dev" = include pre-release / Dev-branch builds.
+    /// </summary>
+    public static string Channel { get; set; } = "stable";
 
     /// <summary>Set after a successful <see cref="CheckAsync"/> that finds a newer version.</summary>
     public static UpdateReleaseInfo? AvailableRelease { get; private set; }
@@ -27,6 +34,7 @@ public static class UpdateService
     /// <summary>
     /// Queries the GitHub Releases API.  Returns a <see cref="UpdateReleaseInfo"/> if a newer
     /// version is available, or <c>null</c> if already up-to-date or the check fails silently.
+    /// Respects <see cref="Channel"/>: "dev" includes pre-releases, "stable" ignores them.
     /// </summary>
     public static async Task<UpdateReleaseInfo?> CheckAsync()
     {
@@ -35,12 +43,27 @@ public static class UpdateService
             using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(12) };
             http.DefaultRequestHeaders.Add("User-Agent", $"BaumDash/{CurrentVersion}");
 
-            var json = await http.GetStringAsync(ApiUrl);
-            using var doc  = JsonDocument.Parse(json);
-            var root = doc.RootElement;
+            JsonElement root;
+            if (Channel == "dev")
+            {
+                // Fetch the full list and take the first release (newest, including pre-releases)
+                var listJson = await http.GetStringAsync(ApiAllReleases);
+                using var listDoc = JsonDocument.Parse(listJson);
+                var arr = listDoc.RootElement;
+                if (arr.GetArrayLength() == 0) return null;
+                // Clone so we can use it outside the using block
+                root = arr[0].Clone();
+            }
+            else
+            {
+                var json = await http.GetStringAsync(ApiLatest);
+                using var doc = JsonDocument.Parse(json);
+                root = doc.RootElement.Clone();
+            }
 
             string tag   = root.TryGetProperty("tag_name", out var t) ? t.GetString() ?? "" : "";
             string notes = root.TryGetProperty("body",     out var b) ? b.GetString() ?? "" : "";
+            bool   isPre = root.TryGetProperty("prerelease", out var pr) && pr.GetBoolean();
 
             // Tags may be "v2.3.0" or "2.3.0"
             string version = tag.TrimStart('v');
@@ -64,7 +87,8 @@ public static class UpdateService
 
             if (string.IsNullOrEmpty(downloadUrl)) return null;
 
-            var release      = new UpdateReleaseInfo(version, downloadUrl, notes);
+            var label    = isPre ? $"{version} (Dev)" : version;
+            var release  = new UpdateReleaseInfo(label, downloadUrl, notes);
             AvailableRelease = release;
             return release;
         }
@@ -124,11 +148,27 @@ public static class UpdateService
 
     private static bool IsNewer(string latest, string current)
     {
-        if (Version.TryParse(latest,  out var v1) &&
-            Version.TryParse(current, out var v2))
-            return v1 > v2;
+        // Strip pre-release suffixes like "-dev", "-beta.1" before numeric comparison
+        static string StripPreRelease(string v) =>
+            v.Contains('-') ? v[..v.IndexOf('-')] : v;
 
-        // Fallback: lexicographic (handles unusual tag formats)
-        return string.Compare(latest, current, StringComparison.OrdinalIgnoreCase) > 0;
+        var latestClean  = StripPreRelease(latest);
+        var currentClean = StripPreRelease(current);
+
+        if (Version.TryParse(latestClean,  out var v1) &&
+            Version.TryParse(currentClean, out var v2))
+        {
+            if (v1 != v2) return v1 > v2;
+            // Same numeric version: a pre-release suffix on latest means it's
+            // not yet "newer" than the same clean release (e.g. 2.5.0-dev vs 2.5.0 stable).
+            // But a clean release is newer than the pre-release of the same number.
+            bool latestIsPre  = latest.Contains('-');
+            bool currentIsPre = current.Contains('-');
+            // stable 2.5.0 > dev 2.5.0-dev, but dev 2.5.0-dev NOT > stable 2.5.0
+            return !latestIsPre && currentIsPre;
+        }
+
+        // Fallback: lexicographic
+        return string.Compare(latestClean, currentClean, StringComparison.OrdinalIgnoreCase) > 0;
     }
 }

@@ -19,4 +19,6 @@ public sealed class GeneralConfig
     public string LayoutProfile   { get; set; } = "auto";
     /// <summary>Tab names hidden in the Discord panel (e.g. ["AI Chat","PC Perf"]).</summary>
     public List<string> HiddenDiscordTabs { get; set; } = new();
+    /// <summary>stable = production releases only; dev = include pre-release / Dev-branch builds.</summary>
+    public string ReleaseChannel { get; set; } = "stable";
 }
