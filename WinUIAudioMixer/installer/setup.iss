@@ -1,6 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.5.3"
-#define AppVersionFull "2.5.3-dev"
+#define AppVersion   "2.5.4"
+#define AppVersionFull "2.5.4-dev"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -52,6 +52,29 @@ begin
       'Continue installing anyway?',
       mbConfirmation, MB_YESNO) = IDNO then
       Result := False;
+  end;
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  OldPath: String;
+  OldRegKey: String;
+begin
+  if CurStep = ssInstall then
+  begin
+    // Remove old Program Files installation left by earlier admin-privilege installs
+    OldPath := ExpandConstant('{pf}\BaumDash');
+    if DirExists(OldPath) then
+      DelTree(OldPath, True, True, True);
+
+    OldPath := ExpandConstant('{pf64}\BaumDash');
+    if DirExists(OldPath) then
+      DelTree(OldPath, True, True, True);
+
+    // Remove old stable AppId registry entries so Windows doesn't show a ghost uninstall entry
+    OldRegKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A3F2E1D0-7B4C-4A8E-9F1D-2C5B6E3A8F90}_is1';
+    RegDeleteKeyIncludingSubkeys(HKLM, OldRegKey);
+    RegDeleteKeyIncludingSubkeys(HKCU, OldRegKey);
   end;
 end;
 
