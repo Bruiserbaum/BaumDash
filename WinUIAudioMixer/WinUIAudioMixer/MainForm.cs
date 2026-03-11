@@ -652,8 +652,8 @@ public sealed class MainForm : Form
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
         SaveWindowState();
-        // Allow exit when explicitly requested (tray Exit item) or triggered by Application.Exit() (import restart)
-        if (!_exitRequested && e.CloseReason != CloseReason.ApplicationExitCall)
+        // Allow exit when explicitly requested (tray Exit item), triggered by Application.Exit(), or after import restart
+        if (!_exitRequested && e.CloseReason != CloseReason.ApplicationExitCall && !PendingImportRestart)
         {
             Services.CrashLogger.Info($"Close intercepted (reason={e.CloseReason}) — hiding to tray");
             e.Cancel = true;
