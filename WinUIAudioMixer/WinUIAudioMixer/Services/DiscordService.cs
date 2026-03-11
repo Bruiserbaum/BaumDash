@@ -285,17 +285,13 @@ public sealed class DiscordService : IDisposable
             }
 
             // 2. No valid token — need client secret to do the AUTHORIZE flow
-            var secretPath = Path.Combine(AppContext.BaseDirectory, "discord-client-secret.txt");
-            log.AppendLine($"  SecretPath: {secretPath} exists={File.Exists(secretPath)}");
-            if (File.Exists(secretPath))
-            {
-                var rawBytes = File.ReadAllBytes(secretPath);
-                var rawText  = File.ReadAllText(secretPath);
-                log.AppendLine($"  Secret file: {rawBytes.Length} bytes, {rawText.Length} chars, " +
-                               $"trimmed={rawText.Trim().Length} chars, " +
-                               $"first bytes={string.Join(" ", rawBytes.Take(8).Select(b => b.ToString("X2")))}");
-            }
             var secret = LoadClientSecret();
+            log.AppendLine($"  Client secret source: " +
+                           (!string.IsNullOrEmpty(SecureStorage.Load().DiscordClientSecret)
+                               ? "SecureStorage"
+                               : File.Exists(Path.Combine(AppContext.BaseDirectory, "discord-client-secret.txt"))
+                                   ? "plaintext file"
+                                   : "not found"));
             if (string.IsNullOrEmpty(secret))
             {
                 log.AppendLine("  ERROR: No client secret found. Aborting.");
@@ -383,6 +379,11 @@ public sealed class DiscordService : IDisposable
 
     private static string? LoadClientSecret()
     {
+        // Primary source: DPAPI-encrypted secure storage (current builds)
+        var fromSecure = SecureStorage.Load().DiscordClientSecret;
+        if (!string.IsNullOrEmpty(fromSecure)) return fromSecure;
+
+        // Fallback: legacy plaintext file (pre-SecureStorage builds, not yet migrated)
         var path = Path.Combine(AppContext.BaseDirectory, "discord-client-secret.txt");
         if (!File.Exists(path)) return null;
         var s = File.ReadAllText(path).Trim();
