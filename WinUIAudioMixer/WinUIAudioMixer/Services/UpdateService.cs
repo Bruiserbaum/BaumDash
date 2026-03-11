@@ -151,11 +151,24 @@ public static class UpdateService
 
         dst.Close();
 
-        // Launch installer; BaumDash exits so the installer can overwrite the exe.
-        // Installs to per-user LocalAppData\Programs — no elevation needed.
+        // Write a PowerShell helper that waits for this process to fully exit
+        // before running the installer — eliminates the race where the exe file
+        // is still locked when the installer tries to replace it.
+        int pid     = System.Diagnostics.Process.GetCurrentProcess().Id;
+        var ps1Path = Path.Combine(Path.GetTempPath(), "baum-update.ps1");
+        var escapedPath = tempPath.Replace("'", "''");
+        var script = "# Wait for BaumDash to exit\n" +
+                     "$proc = Get-Process -Id " + pid + " -ErrorAction SilentlyContinue\n" +
+                     "if ($proc) { $proc.WaitForExit(10000) | Out-Null }\n" +
+                     "Start-Sleep -Milliseconds 500\n" +
+                     "# Run installer silently\n" +
+                     "Start-Process -FilePath '" + escapedPath + "' -ArgumentList '/SILENT' -Wait\n";
+        File.WriteAllText(ps1Path, script);
+
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
-            FileName        = tempPath,
+            FileName        = "powershell.exe",
+            Arguments       = $"-NonInteractive -WindowStyle Hidden -File \"{ps1Path}\"",
             UseShellExecute = true,
         });
 
