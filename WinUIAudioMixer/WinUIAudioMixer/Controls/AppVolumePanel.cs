@@ -17,7 +17,7 @@ public sealed class AppVolumePanel : UserControl
     private readonly System.Windows.Forms.Timer _refreshTimer;
 
     // Weather
-    private const int WeatherH = 168; // height reserved at bottom for weather footer
+    private const int WeatherH = 188; // height reserved at bottom for weather footer
     private System.Windows.Forms.Timer? _weatherTimer;
     private WeatherService?  _weatherSvc;
     private WeatherSnapshot? _weather;
@@ -207,13 +207,13 @@ public sealed class AppVolumePanel : UserControl
             using var condBrush   = new SolidBrush(AppTheme.TextPrimary);
             using var detailBrush = new SolidBrush(AppTheme.TextSecondary);
 
-            var condRect = new RectangleF(0, wy, ClientSize.Width, 26);
+            var condRect = new RectangleF(0, wy, ClientSize.Width, 32);
             g.DrawString(_weather.Condition, AppTheme.FontClockDate, condBrush, condRect, wFmt);
-            wy += 28;
+            wy += 34;
 
             string hiLo   = $"H: {_weather.TempHigh:F0}{_weather.TempUnit}   L: {_weather.TempLow:F0}{_weather.TempUnit}";
             string wind    = $"Wind: {_weather.WindSpeed:F0} {_weather.WindUnit}";
-            var detailRect = new RectangleF(0, wy, ClientSize.Width, 20);
+            var detailRect = new RectangleF(0, wy, ClientSize.Width, 26);
             g.DrawString($"{hiLo}     {wind}", AppTheme.FontLabel, detailBrush, detailRect, wFmt);
         }
         else
