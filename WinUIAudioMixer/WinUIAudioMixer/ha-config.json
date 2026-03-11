@@ -1,6 +1,5 @@
 {
   "url": "https://your-ha.ui.nabu.casa",
-  "token": "YOUR_LONG_LIVED_ACCESS_TOKEN",
   "lights": [
     { "id": "light.living_room", "name": "Room Light" }
   ],

@@ -68,15 +68,23 @@ public sealed class ChatGptService : IDisposable
 
     public static ChatGptConfig? LoadConfig()
     {
+        var secure = SecureStorage.Load();
+        if (string.IsNullOrEmpty(secure.ChatGptApiKey)) return null;
+
         var path = Path.Combine(AppContext.BaseDirectory, "chatgpt-config.json");
-        if (!File.Exists(path)) return null;
+        ChatGptConfig cfg;
         try
         {
-            return JsonSerializer.Deserialize<ChatGptConfig>(
-                File.ReadAllText(path),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            cfg = (File.Exists(path)
+                ? JsonSerializer.Deserialize<ChatGptConfig>(
+                    File.ReadAllText(path),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : null) ?? new ChatGptConfig();
         }
-        catch { return null; }
+        catch { cfg = new ChatGptConfig(); }
+
+        cfg.ApiKey = secure.ChatGptApiKey;
+        return cfg;
     }
 
     public void Dispose() => _http.Dispose();

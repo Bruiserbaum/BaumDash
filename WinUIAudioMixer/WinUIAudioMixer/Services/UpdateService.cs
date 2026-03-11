@@ -11,9 +11,26 @@ public sealed record UpdateReleaseInfo(string Version, string DownloadUrl, strin
 /// </summary>
 public static class UpdateService
 {
-    /// <summary>Version that is currently running — read from the assembly, set via &lt;Version&gt; in the .csproj.</summary>
-    public static readonly string CurrentVersion =
-        System.Reflection.Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+    /// <summary>
+    /// Version that is currently running — uses AssemblyInformationalVersion so pre-release
+    /// suffixes like "-dev" are preserved (e.g. "2.5.0-dev" instead of just "2.5.0").
+    /// Build metadata appended by the SDK (+commit hash) is stripped.
+    /// </summary>
+    public static readonly string CurrentVersion = GetCurrentVersion();
+
+    private static string GetCurrentVersion()
+    {
+        var asm  = System.Reflection.Assembly.GetExecutingAssembly();
+        var attr = System.Reflection.CustomAttributeExtensions
+                        .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(asm);
+        var info = attr?.InformationalVersion ?? "";
+        // Strip build metadata suffix (+abc1234) appended by the .NET SDK
+        var plus = info.IndexOf('+');
+        if (plus >= 0) info = info[..plus];
+        if (!string.IsNullOrWhiteSpace(info)) return info;
+        // Fallback to numeric-only version
+        return asm.GetName().Version?.ToString(3) ?? "0.0.0";
+    }
 
     private const string GitHubOwner    = "Bruiserbaum";
     private const string GitHubRepo     = "BaumDash";
@@ -134,10 +151,24 @@ public static class UpdateService
 
         dst.Close();
 
-        // Launch installer; BaumDash exits so the installer can overwrite the exe
+        // Write a PowerShell helper that waits for this process to fully exit
+        // before running the installer — eliminates the race where the exe file
+        // is still locked when the installer tries to replace it.
+        int pid     = System.Diagnostics.Process.GetCurrentProcess().Id;
+        var ps1Path = Path.Combine(Path.GetTempPath(), "baum-update.ps1");
+        var escapedPath = tempPath.Replace("'", "''");
+        var script = "# Wait for BaumDash to exit\n" +
+                     "$proc = Get-Process -Id " + pid + " -ErrorAction SilentlyContinue\n" +
+                     "if ($proc) { $proc.WaitForExit(10000) | Out-Null }\n" +
+                     "Start-Sleep -Milliseconds 500\n" +
+                     "# Run installer silently\n" +
+                     "Start-Process -FilePath '" + escapedPath + "' -ArgumentList '/SILENT' -Wait\n";
+        File.WriteAllText(ps1Path, script);
+
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
-            FileName        = tempPath,
+            FileName        = "powershell.exe",
+            Arguments       = $"-NonInteractive -WindowStyle Hidden -File \"{ps1Path}\"",
             UseShellExecute = true,
         });
 

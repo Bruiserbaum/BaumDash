@@ -55,7 +55,12 @@ public sealed class MainForm : Form
             SynchronizationContext.Current ?? new SynchronizationContext(),
             OnAudioChanged);
 
-        // Discord: client ID loaded from discord-settings.txt next to the exe
+        // One-time migration: move secrets from plaintext files into DPAPI-encrypted store
+        Services.SecureStorage.MigrateFromPlaintext();
+        // Every startup: remove any lingering plaintext secret artifacts
+        Services.SecureStorage.CleanupLegacyFiles();
+
+        // Discord: client ID loaded from secure storage
         var clientId = LoadDiscordClientId();
         _discordSvc = new DiscordService(clientId);
 
@@ -709,11 +714,8 @@ public sealed class MainForm : Form
 
     private static string LoadDiscordClientId()
     {
-        var settingsFile = Path.Combine(
-            AppContext.BaseDirectory, "discord-client-id.txt");
-        if (File.Exists(settingsFile))
-            return File.ReadAllText(settingsFile).Trim();
-        return "YOUR_DISCORD_CLIENT_ID"; // replace or create discord-client-id.txt
+        var id = Services.SecureStorage.Load().DiscordClientId;
+        return string.IsNullOrEmpty(id) ? "YOUR_DISCORD_CLIENT_ID" : id;
     }
 
     private static void EnsureAutoStart()
@@ -861,9 +863,18 @@ public sealed class MainForm : Form
             "BACKUP & RESTORE\r\n" +
             "─────────────────────────────────────────────────\r\n" +
             "Use Export… / Import… buttons at the bottom of Settings\r\n" +
-            "to back up or restore all config files at once.\r\n" +
-            "The backup is a .baumdash-backup file (JSON archive).\r\n" +
+            "to back up or restore all settings at once.\r\n" +
+            "The backup is a .baumdash-backup file (JSON archive) and\r\n" +
+            "includes all API keys — store it somewhere safe.\r\n" +
             "Importing restarts BaumDash automatically.\r\n" +
+            "\r\n" +
+            "SECURITY — API KEY STORAGE\r\n" +
+            "─────────────────────────────────────────────────\r\n" +
+            "API keys and tokens are stored encrypted using Windows\r\n" +
+            "DPAPI (baum-secure.dat). They can only be decrypted by\r\n" +
+            "your Windows user account on this machine.\r\n" +
+            "Non-sensitive settings (URLs, entity IDs, layout) remain\r\n" +
+            "in their JSON files for easy manual editing.\r\n" +
             "\r\n" +
             "INSTALL LOCATION\r\n" +
             "─────────────────────────────────────────────────\r\n" +

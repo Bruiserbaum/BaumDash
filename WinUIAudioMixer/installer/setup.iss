@@ -1,5 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.4.1"
+#define AppVersion   "2.5.0"
+#define AppVersionFull "2.5.0"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -9,16 +10,17 @@ AppId={{A3F2E1D0-7B4C-4A8E-9F1D-2C5B6E3A8F90}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={autopf}\{#AppName}
+DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=output
-OutputBaseFilename=BaumDash-Setup-{#AppVersion}
+OutputBaseFilename=BaumDash-Setup-{#AppVersionFull}
 SetupIconFile=..\WinUIAudioMixer\app.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
+CloseApplications=yes
 MinVersion=10.0.22621
 ArchitecturesInstallIn64BitMode=x64compatible
 ArchitecturesAllowed=x64compatible
@@ -54,6 +56,29 @@ begin
   end;
 end;
 
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  OldPath: String;
+  OldRegKey: String;
+begin
+  if CurStep = ssInstall then
+  begin
+    // Remove old Program Files installation left by earlier admin-privilege installs
+    OldPath := ExpandConstant('{pf}\BaumDash');
+    if DirExists(OldPath) then
+      DelTree(OldPath, True, True, True);
+
+    OldPath := ExpandConstant('{pf64}\BaumDash');
+    if DirExists(OldPath) then
+      DelTree(OldPath, True, True, True);
+
+    // Remove old stable AppId registry entries so Windows doesn't show a ghost uninstall entry
+    OldRegKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A3F2E1D0-7B4C-4A8E-9F1D-2C5B6E3A8F90}_is1';
+    RegDeleteKeyIncludingSubkeys(HKLM, OldRegKey);
+    RegDeleteKeyIncludingSubkeys(HKCU, OldRegKey);
+  end;
+end;
+
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
@@ -61,17 +86,19 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
 [Files]
-; Main application (single-file publish — all managed code bundled into the exe)
-Source: "{#PublishDir}\{#AppExeName}";                    DestDir: "{app}"; Flags: ignoreversion
-; Native WPF/DirectX helpers required at runtime (not bundled into single-file)
-Source: "{#PublishDir}\D3DCompiler_47_cor3.dll";          DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\PenImc_cor3.dll";                  DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\PresentationNative_cor3.dll";      DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\vcruntime140_cor3.dll";             DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PublishDir}\wpfgfx_cor3.dll";                  DestDir: "{app}"; Flags: ignoreversion
+; Main application
+Source: "{#PublishDir}\{#AppExeName}";                               DestDir: "{app}"; Flags: ignoreversion restartreplace uninsrestartdelete
+; Managed assembly + runtime manifests (required for framework-dependent launch)
+Source: "{#PublishDir}\WinUIAudioMixer.dll";                         DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\WinUIAudioMixer.deps.json";                   DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\WinUIAudioMixer.runtimeconfig.json";          DestDir: "{app}"; Flags: ignoreversion
+; Runtime assemblies
+Source: "{#PublishDir}\Microsoft.Windows.SDK.NET.dll";              DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\System.Security.Cryptography.ProtectedData.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\System.Speech.dll";                          DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\WinRT.Runtime.dll";                          DestDir: "{app}"; Flags: ignoreversion
 
 ; Config files — never overwrite if user already configured them
-Source: "{#PublishDir}\discord-client-id.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\ha-config.json";            DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\anythingllm-config.json";  DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\chatgpt-config.json";       DestDir: "{app}"; Flags: onlyifdoesntexist

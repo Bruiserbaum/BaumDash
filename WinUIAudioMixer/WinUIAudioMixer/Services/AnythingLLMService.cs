@@ -89,15 +89,21 @@ public sealed class AnythingLLMService : IDisposable
 
     public static AnythingLLMConfig? LoadConfig()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "anythingllm-config.json");
-        if (!File.Exists(path)) return null;
+        var secure = SecureStorage.Load();
+        var path   = Path.Combine(AppContext.BaseDirectory, "anythingllm-config.json");
+        AnythingLLMConfig cfg;
         try
         {
-            return JsonSerializer.Deserialize<AnythingLLMConfig>(
-                File.ReadAllText(path),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            cfg = (File.Exists(path)
+                ? JsonSerializer.Deserialize<AnythingLLMConfig>(
+                    File.ReadAllText(path),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                : null) ?? new AnythingLLMConfig();
         }
-        catch { return null; }
+        catch { cfg = new AnythingLLMConfig(); }
+
+        cfg.ApiKey = secure.AnythingLLMApiKey;
+        return string.IsNullOrEmpty(cfg.ApiKey) ? null : cfg;
     }
 
     public void Dispose() => _http.Dispose();
