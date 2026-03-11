@@ -114,15 +114,23 @@ public sealed class HomeAssistantService : IDisposable
     /// </summary>
     public static HaConfig? LoadConfig()
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "ha-config.json");
-        if (!File.Exists(path)) return null;
-        try
+        var secure = SecureStorage.Load();
+        var path   = Path.Combine(AppContext.BaseDirectory, "ha-config.json");
+        HaConfig? cfg = null;
+        if (File.Exists(path))
         {
-            return JsonSerializer.Deserialize<HaConfig>(
-                File.ReadAllText(path),
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            try
+            {
+                cfg = JsonSerializer.Deserialize<HaConfig>(
+                    File.ReadAllText(path),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            }
+            catch { }
         }
-        catch { return null; }
+        if (cfg == null) return null;
+
+        cfg.Token = secure.HaToken;
+        return string.IsNullOrEmpty(cfg.Url) ? null : cfg;
     }
 
     public void Dispose() => _http.Dispose();

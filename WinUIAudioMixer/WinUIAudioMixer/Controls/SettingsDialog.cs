@@ -1160,66 +1160,74 @@ public sealed class SettingsDialog : Form
 
     private void LoadAllSettings()
     {
-        // Discord
-        var discordPath = Path.Combine(AppContext.BaseDirectory, "discord-client-id.txt");
-        if (File.Exists(discordPath))
-            _discordClientId.Text = File.ReadAllText(discordPath).Trim();
+        // Secrets — always from secure storage
+        var secure = Services.SecureStorage.Load();
+        _discordClientId    .Text = secure.DiscordClientId;
+        _discordClientSecret.Text = secure.DiscordClientSecret;
 
-        var secretPath2 = Path.Combine(AppContext.BaseDirectory, "discord-client-secret.txt");
-        if (File.Exists(secretPath2))
-            _discordClientSecret.Text = File.ReadAllText(secretPath2).Trim();
-
-        // AnythingLLM
+        // AnythingLLM — URL + Workspace from file, key from secure storage
         try
         {
-            var cfg = AnythingLLMService.LoadConfig();
-            if (cfg != null)
+            var path = Path.Combine(AppContext.BaseDirectory, "anythingllm-config.json");
+            if (File.Exists(path))
             {
-                _aiUrl      .Text = cfg.Url;
-                _aiKey      .Text = cfg.ApiKey;
-                _aiWorkspace.Text = cfg.Workspace;
+                var cfg = JsonSerializer.Deserialize<AnythingLLMConfig>(
+                    File.ReadAllText(path),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (cfg != null)
+                {
+                    _aiUrl      .Text = cfg.Url;
+                    _aiWorkspace.Text = cfg.Workspace;
+                }
             }
+            _aiKey.Text = secure.AnythingLLMApiKey;
         }
         catch { }
 
-        // ChatGPT
+        // ChatGPT — Model from file, key from secure storage
         try
         {
-            var cfg = ChatGptService.LoadConfig();
-            if (cfg != null)
+            var path = Path.Combine(AppContext.BaseDirectory, "chatgpt-config.json");
+            if (File.Exists(path))
             {
-                _gptKey  .Text = cfg.ApiKey;
-                _gptModel.Text = cfg.Model;
+                var cfg = JsonSerializer.Deserialize<ChatGptConfig>(
+                    File.ReadAllText(path),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (cfg != null)
+                    _gptModel.Text = cfg.Model;
             }
+            _gptKey.Text = secure.ChatGptApiKey;
         }
         catch { }
 
-        // Home Assistant
+        // Home Assistant — URL + entities from file, token from secure storage
         try
         {
-            var cfg = HomeAssistantService.LoadConfig();
-            if (cfg != null)
+            var path = Path.Combine(AppContext.BaseDirectory, "ha-config.json");
+            if (File.Exists(path))
             {
-                _haUrl      .Text = cfg.Url;
-                _haToken    .Text = cfg.Token;
-                _haLights   .Text = string.Join("\r\n", cfg.Lights  .Select(e => $"{e.Id} = {e.Name}"));
-                _haSwitches .Text = string.Join("\r\n", cfg.Switches.Select(e => $"{e.Id} = {e.Name}"));
-                _haSensors  .Text = string.Join("\r\n", cfg.Sensors .Select(e => $"{e.Id} = {e.Name}"));
+                var cfg = JsonSerializer.Deserialize<HaConfig>(
+                    File.ReadAllText(path),
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (cfg != null)
+                {
+                    _haUrl     .Text = cfg.Url;
+                    _haLights  .Text = string.Join("\r\n", cfg.Lights  .Select(e => $"{e.Id} = {e.Name}"));
+                    _haSwitches.Text = string.Join("\r\n", cfg.Switches.Select(e => $"{e.Id} = {e.Name}"));
+                    _haSensors .Text = string.Join("\r\n", cfg.Sensors .Select(e => $"{e.Id} = {e.Name}"));
+                }
             }
+            _haToken.Text = secure.HaToken;
         }
         catch { }
 
-        // Google Calendar
+        // Google Calendar — iCal URLs from secure storage
         try
         {
-            var cfg = GoogleCalendarService.LoadConfig();
-            if (cfg != null)
-            {
-                _calEntries.Clear();
-                _calEntriesContainer?.Controls.Clear();
-                foreach (var entry in cfg.Calendars)
-                    AddCalendarRow(entry.Name, entry.ICalUrl);
-            }
+            _calEntries.Clear();
+            _calEntriesContainer?.Controls.Clear();
+            foreach (var entry in secure.Calendars)
+                AddCalendarRow(entry.Name, entry.ICalUrl);
         }
         catch { }
 
@@ -1338,54 +1346,54 @@ public sealed class SettingsDialog : Form
             var dir  = AppContext.BaseDirectory;
             var opts = new JsonSerializerOptions { WriteIndented = true };
 
-            // Discord
-            File.WriteAllText(Path.Combine(dir, "discord-client-id.txt"),
-                _discordClientId.Text.Trim());
+            // ── Secrets → Windows DPAPI encrypted store ───────────────────────
+            var calendars = _calEntries
+                .Where(e => !string.IsNullOrWhiteSpace(e.Url.Text))
+                .Select(e => new CalendarEntry
+                {
+                    Name    = string.IsNullOrWhiteSpace(e.Name.Text) ? "Calendar" : e.Name.Text.Trim(),
+                    ICalUrl = e.Url.Text.Trim().Replace("webcal://", "https://"),
+                })
+                .ToList();
 
-            var secretVal = _discordClientSecret.Text.Trim();
-            if (!string.IsNullOrEmpty(secretVal))
-                File.WriteAllText(Path.Combine(dir, "discord-client-secret.txt"), secretVal);
+            Services.SecureStorage.Save(new Models.SecurePayload
+            {
+                DiscordClientId     = _discordClientId    .Text.Trim(),
+                DiscordClientSecret = _discordClientSecret.Text.Trim(),
+                ChatGptApiKey       = _gptKey             .Text.Trim(),
+                AnythingLLMApiKey   = _aiKey              .Text.Trim(),
+                HaToken             = _haToken            .Text.Trim(),
+                Calendars           = calendars,
+            });
 
-            // AnythingLLM
+            // ── Non-sensitive config → JSON files ─────────────────────────────
+
+            // AnythingLLM — URL + Workspace only (no key)
             File.WriteAllText(Path.Combine(dir, "anythingllm-config.json"),
                 JsonSerializer.Serialize(new AnythingLLMConfig
                 {
                     Url       = _aiUrl      .Text.Trim(),
-                    ApiKey    = _aiKey      .Text.Trim(),
+                    ApiKey    = "",   // stored securely
                     Workspace = _aiWorkspace.Text.Trim(),
                 }, opts));
 
-            // ChatGPT
+            // ChatGPT — Model only (no key)
             File.WriteAllText(Path.Combine(dir, "chatgpt-config.json"),
                 JsonSerializer.Serialize(new ChatGptConfig
                 {
-                    ApiKey = _gptKey.Text.Trim(),
+                    ApiKey = "",   // stored securely
                     Model  = string.IsNullOrWhiteSpace(_gptModel.Text) ? "gpt-4o" : _gptModel.Text.Trim(),
                 }, opts));
 
-            // Home Assistant
+            // Home Assistant — URL + entities only (no token)
             File.WriteAllText(Path.Combine(dir, "ha-config.json"),
                 JsonSerializer.Serialize(new HaConfig
                 {
                     Url      = _haUrl    .Text.Trim(),
-                    Token    = _haToken  .Text.Trim(),
+                    Token    = "",   // stored securely
                     Lights   = ParseEntities(_haLights  .Text),
                     Switches = ParseEntities(_haSwitches.Text),
                     Sensors  = ParseEntities(_haSensors .Text),
-                }, opts));
-
-            // Google Calendar
-            File.WriteAllText(Path.Combine(dir, "gcalendar-config.json"),
-                JsonSerializer.Serialize(new GoogleCalendarConfig
-                {
-                    Calendars = _calEntries
-                        .Where(e => !string.IsNullOrWhiteSpace(e.Url.Text))
-                        .Select(e => new CalendarEntry
-                        {
-                            Name    = string.IsNullOrWhiteSpace(e.Name.Text) ? "Calendar" : e.Name.Text.Trim(),
-                            ICalUrl = e.Url.Text.Trim().Replace("webcal://", "https://"),
-                        })
-                        .ToList(),
                 }, opts));
 
             // Weather
@@ -1499,17 +1507,19 @@ public sealed class SettingsDialog : Form
 
     // ── Export / Import ───────────────────────────────────────────────────────
 
+    // Non-sensitive config files included in backup
     private static readonly string[] BackupFiles =
     {
-        "discord-client-id.txt",
         "anythingllm-config.json",
         "chatgpt-config.json",
         "ha-config.json",
-        "gcalendar-config.json",
         "app-shortcuts.json",
         "general-config.json",
         "weather-config.json",
     };
+
+    // Key used to embed secrets in the backup JSON
+    private const string SecretsKey = "__secrets";
 
     private void OnExport(object? sender, EventArgs e)
     {
@@ -1531,6 +1541,9 @@ public sealed class SettingsDialog : Form
                 var path = Path.Combine(dir, file);
                 backup[file] = File.Exists(path) ? File.ReadAllText(path) : null;
             }
+
+            // Embed secrets as plaintext JSON — the user chose to export them
+            backup[SecretsKey] = JsonSerializer.Serialize(Services.SecureStorage.Load());
 
             var opts = new JsonSerializerOptions { WriteIndented = true };
             File.WriteAllText(dlg.FileName, JsonSerializer.Serialize(backup, opts));
@@ -1559,11 +1572,25 @@ public sealed class SettingsDialog : Form
                          ?? throw new InvalidDataException("Invalid backup file.");
 
             var dir = AppContext.BaseDirectory;
+
+            // Restore non-sensitive config files
             foreach (var (file, content) in backup)
             {
                 if (content == null) continue;
                 if (!BackupFiles.Contains(file)) continue;
                 File.WriteAllText(Path.Combine(dir, file), content);
+            }
+
+            // Restore secrets back into secure storage
+            if (backup.TryGetValue(SecretsKey, out var secretsJson) && secretsJson != null)
+            {
+                var payload = JsonSerializer.Deserialize<Models.SecurePayload>(secretsJson,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (payload != null)
+                {
+                    Services.SecureStorage.Save(payload);
+                    Services.SecureStorage.Invalidate();
+                }
             }
 
             MainForm.PendingImportRestart = true;

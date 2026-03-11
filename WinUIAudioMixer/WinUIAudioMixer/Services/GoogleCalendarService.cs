@@ -34,21 +34,10 @@ public sealed class GoogleCalendarService
 
     public static GoogleCalendarConfig? LoadConfig()
     {
-        try
-        {
-            if (!File.Exists(ConfigPath)) return null;
-            var cfg = JsonSerializer.Deserialize<GoogleCalendarConfig>(File.ReadAllText(ConfigPath));
-            if (cfg == null) return null;
-
-            // Migrate legacy single ICalUrl → Calendars list
-            if (!string.IsNullOrWhiteSpace(cfg.ICalUrl) && cfg.Calendars.Count == 0)
-            {
-                cfg.Calendars.Add(new CalendarEntry { Name = "My Calendar", ICalUrl = cfg.ICalUrl });
-                cfg.ICalUrl = null;
-            }
-            return cfg;
-        }
-        catch { return null; }
+        // Calendar URLs contain auth tokens — stored securely, not in the JSON file
+        var secure = SecureStorage.Load();
+        if (secure.Calendars.Count == 0) return null;
+        return new GoogleCalendarConfig { Calendars = secure.Calendars };
     }
 
     /// <summary>Fetches all iCal feeds in parallel and returns upcoming events merged and sorted, plus any per-URL errors.</summary>
