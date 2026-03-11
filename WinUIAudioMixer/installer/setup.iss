@@ -1,5 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.4.1"
+#define AppVersion   "2.5.0"
+#define AppVersionFull "2.5.0-dev"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -12,7 +13,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 OutputDir=output
-OutputBaseFilename=BaumDash-Setup-{#AppVersion}
+OutputBaseFilename=BaumDash-Setup-{#AppVersionFull}
 SetupIconFile=..\WinUIAudioMixer\app.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2/ultra64
@@ -71,7 +72,6 @@ Source: "{#PublishDir}\vcruntime140_cor3.dll";             DestDir: "{app}"; Fla
 Source: "{#PublishDir}\wpfgfx_cor3.dll";                  DestDir: "{app}"; Flags: ignoreversion
 
 ; Config files — never overwrite if user already configured them
-Source: "{#PublishDir}\discord-client-id.txt"; DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\ha-config.json";            DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\anythingllm-config.json";  DestDir: "{app}"; Flags: onlyifdoesntexist
 Source: "{#PublishDir}\chatgpt-config.json";       DestDir: "{app}"; Flags: onlyifdoesntexist
