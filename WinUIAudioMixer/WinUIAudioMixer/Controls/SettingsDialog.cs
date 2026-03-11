@@ -37,6 +37,9 @@ public sealed class SettingsDialog : Form
     private Button?      _btnAccentPicker;
     private Color        _customAccent = AppTheme.DefaultAccent;
 
+    // Release channel
+    private RadioButton? _rbChannelStable, _rbChannelDev;
+
     // Discord tab visibility
     private static readonly string[] DiscordTabNames = { "Discord", "AI Chat", "ChatGPT", "PC Perf", "Calendar", "Home Asst", "Apps" };
     private CheckBox[]? _discordTabCheckboxes;
@@ -844,6 +847,18 @@ public sealed class SettingsDialog : Form
         y += 26;
         AddHint(scroll, "Restart BaumDash after saving to apply theme changes.", ref y, 22);
 
+        // ── Release Channel ───────────────────────────────────────────────────
+        y += 2;
+        AddSectionLabel(scroll, "RELEASE CHANNEL", ref y);
+
+        var channelRow = new Panel { BackColor = Color.Transparent, Location = new Point(0, y), Size = new Size(DlgW, 26) };
+        _rbChannelStable = MakeRadioButton("Stable  (recommended)", channelRow, FieldX,       0);
+        _rbChannelDev    = MakeRadioButton("Dev  (preview builds)", channelRow, FieldX + 190, 0);
+        _rbChannelStable.Checked = true;
+        scroll.Controls.Add(channelRow);
+        y += 26;
+        AddHint(scroll, "Dev builds may have bugs. Switch to receive pre-release fixes from the Dev branch.", ref y, 22);
+
         // ── Accent Colour ─────────────────────────────────────────────────────
         y += 2;
         AddSectionLabel(scroll, "ACCENT COLOUR", ref y);
@@ -1319,6 +1334,15 @@ public sealed class SettingsDialog : Form
                         for (int i = 0; i < DiscordTabNames.Length; i++)
                             _discordTabCheckboxes[i].Checked = !hidden.Contains(DiscordTabNames[i]);
                     }
+
+                    if ((cfg.ReleaseChannel ?? "stable") == "dev")
+                    {
+                        if (_rbChannelDev != null) _rbChannelDev.Checked = true;
+                    }
+                    else
+                    {
+                        if (_rbChannelStable != null) _rbChannelStable.Checked = true;
+                    }
                 }
             }
             else
@@ -1411,6 +1435,7 @@ public sealed class SettingsDialog : Form
             string layoutProf  = (_rbLayout1920?.Checked == true) ? "1920"
                                : (_rbLayout2560?.Checked == true) ? "2560"
                                : "auto";
+            string channel = (_rbChannelDev?.Checked == true) ? "dev" : "stable";
 
             var hiddenTabs = new List<string>();
             if (_discordTabCheckboxes != null)
@@ -1432,7 +1457,11 @@ public sealed class SettingsDialog : Form
                     GpuPlatform       = gpuPlat,
                     LayoutProfile     = layoutProf,
                     HiddenDiscordTabs = hiddenTabs,
+                    ReleaseChannel    = channel,
                 }, opts));
+
+            // Apply channel immediately without restart
+            Services.UpdateService.Channel = channel;
 
             // Startup
             SetAutoStart(_chkAutoStart.Checked);

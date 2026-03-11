@@ -91,6 +91,7 @@ public sealed class MainForm : Form
                 {
                     _closeToTray   = cfg.CloseToTray;
                     _layoutProfile = cfg.LayoutProfile ?? "auto";
+                    Services.UpdateService.Channel = cfg.ReleaseChannel ?? "stable";
                     AppTheme.Apply(cfg.Theme, cfg.CustomAccentHex);
                     if (!string.IsNullOrEmpty(cfg.BgImagePath) && File.Exists(cfg.BgImagePath))
                     {
