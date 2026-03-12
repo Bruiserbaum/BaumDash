@@ -414,6 +414,15 @@ public sealed class DiscordService : IDisposable
     {
         var m = ParseVoiceStateMember(data);
         if (m == null) return;
+
+        // Debug: log streaming-relevant VOICE_STATE_CREATE/UPDATE for the current user
+        if (m.UserId == _currentUserId)
+        {
+            var rawVs = data?["voice_state"]?.ToJsonString() ?? "null";
+            File.AppendAllText(_debugLogPath,
+                $"[{DateTime.Now:HH:mm:ss}] VOICE_STATE_UPDATE uid={m.UserId} IsStreaming={m.IsStreaming} voice_state={rawVs}\n");
+        }
+
         // Preserve live IsSpeaking — voice_state events don't carry speaking state
         var prev = VoiceMembers.FirstOrDefault(x => x.UserId == m.UserId);
         if (prev?.IsSpeaking == true)
@@ -469,6 +478,8 @@ public sealed class DiscordService : IDisposable
         var nowStreaming = _currentUserId != null
             ? VoiceMembers.FirstOrDefault(m => m.UserId == _currentUserId)?.IsStreaming ?? false
             : false;
+        File.AppendAllText(_debugLogPath,
+            $"[{DateTime.Now:HH:mm:ss}] TrackSelfStreaming: _currentUserId={_currentUserId ?? "null"} nowStreaming={nowStreaming} _selfStreaming={_selfStreaming}\n");
         if (nowStreaming == _selfStreaming) return;
         _selfStreaming = nowStreaming;
         StreamingStateChanged?.Invoke(_selfStreaming);
@@ -806,6 +817,10 @@ public sealed class DiscordService : IDisposable
                             var uid = s?["user"]?["id"]?.GetValue<string>();
                             if (uid == null) continue;
                             var isStreaming = s?["voice_state"]?["self_stream"]?.GetValue<bool>() ?? false;
+                            // Debug: log every poll entry for the current user
+                            if (uid == _currentUserId)
+                                File.AppendAllText(_debugLogPath,
+                                    $"[{DateTime.Now:HH:mm:ss}] Poll uid={uid} self_stream={isStreaming} voice_state={s?["voice_state"]?.ToJsonString() ?? "null"}\n");
                             var existing = VoiceMembers.FirstOrDefault(m => m.UserId == uid);
                             if (existing == null || existing.IsStreaming == isStreaming) continue;
                             VoiceMembers = VoiceMembers
