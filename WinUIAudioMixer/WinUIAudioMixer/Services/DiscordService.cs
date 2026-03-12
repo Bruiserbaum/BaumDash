@@ -277,7 +277,9 @@ public sealed class DiscordService : IDisposable
                     log.AppendLine($"  AUTHENTICATE(saved) response: {authData?.ToJsonString() ?? "null"}");
                     if (authData?["access_token"] != null)
                     {
-                        log.AppendLine("  Saved token still valid. Done.");
+                        // Grab user ID from auth response as fallback if READY event didn't supply it
+                        _currentUserId ??= authData?["user"]?["id"]?.GetValue<string>();
+                        log.AppendLine($"  Saved token still valid. CurrentUserId={_currentUserId ?? "null"}");
                         return;
                     }
                     log.AppendLine("  Saved token expired/invalid.");
@@ -339,6 +341,7 @@ public sealed class DiscordService : IDisposable
             var finalAuth = await SendCommandAsync("AUTHENTICATE",
                 new JsonObject { ["access_token"] = token });
             log.AppendLine($"  AUTHENTICATE(new) response: {finalAuth?.ToJsonString() ?? "null"}");
+            _currentUserId ??= finalAuth?["user"]?["id"]?.GetValue<string>();
 
             // 6. Save token so future sessions skip the popup
             File.WriteAllText(_tokenPath, token);
@@ -754,13 +757,26 @@ public sealed class DiscordService : IDisposable
 
     private async Task PollLoopAsync(CancellationToken ct)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(2));
+        int tick = 0;
         try
         {
             while (await timer.WaitForNextTickAsync(ct))
+            {
                 await PollVoiceStateAsync();
+                // Re-subscribe to channel events every 30 s to keep SPEAKING events flowing
+                if (++tick % 15 == 0 && _currentChannelId != null)
+                    await TrySubscribeChannelSpeakingAsync(_currentChannelId);
+            }
         }
         catch (OperationCanceledException) { }
+    }
+
+    // Lightweight re-subscribe for just the speaking events (avoids full re-auth overhead)
+    private async Task TrySubscribeChannelSpeakingAsync(string channelId)
+    {
+        await TrySubscribeAsync("SPEAKING_START", new JsonObject { ["channel_id"] = channelId });
+        await TrySubscribeAsync("SPEAKING_STOP",  new JsonObject { ["channel_id"] = channelId });
     }
 
     private async Task PollVoiceStateAsync()
@@ -773,23 +789,35 @@ public sealed class DiscordService : IDisposable
 
             if (channelId == _currentChannelId)
             {
-                // Still in same channel — check whether self_stream changed (Go Live toggle)
-                if (channelId != null && _currentUserId != null)
+                // Still in same channel — sync streaming state from fresh voice_states snapshot
+                if (channelId != null)
                 {
                     var states = data?["voice_states"]?.AsArray();
                     if (states != null)
                     {
+                        // If we don't yet know our own ID and we're alone, infer it
+                        if (_currentUserId == null && states.Count == 1)
+                            _currentUserId = states[0]?["user"]?["id"]?.GetValue<string>();
+
+                        // Update IsStreaming on each member without touching IsSpeaking
+                        bool memberChanged = false;
                         foreach (var s in states)
                         {
-                            if (s?["user"]?["id"]?.GetValue<string>() != _currentUserId) continue;
-                            var nowStreaming = s?["voice_state"]?["self_stream"]?.GetValue<bool>() ?? false;
-                            if (nowStreaming != _selfStreaming)
-                            {
-                                _selfStreaming = nowStreaming;
-                                StreamingStateChanged?.Invoke(_selfStreaming);
-                            }
-                            break;
+                            var uid = s?["user"]?["id"]?.GetValue<string>();
+                            if (uid == null) continue;
+                            var isStreaming = s?["voice_state"]?["self_stream"]?.GetValue<bool>() ?? false;
+                            var existing = VoiceMembers.FirstOrDefault(m => m.UserId == uid);
+                            if (existing == null || existing.IsStreaming == isStreaming) continue;
+                            VoiceMembers = VoiceMembers
+                                .Select(m => m.UserId == uid
+                                    ? new DiscordMember { UserId = m.UserId, Username = m.Username, Nick = m.Nick,
+                                                          IsMuted = m.IsMuted, IsDeafened = m.IsDeafened,
+                                                          IsStreaming = isStreaming, IsSpeaking = m.IsSpeaking }
+                                    : m)
+                                .ToList();
+                            memberChanged = true;
                         }
+                        if (memberChanged) TrackSelfStreaming();
                     }
                 }
                 return;
