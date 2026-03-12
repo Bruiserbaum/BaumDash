@@ -411,6 +411,15 @@ public sealed class DiscordService : IDisposable
     {
         var m = ParseVoiceStateMember(data);
         if (m == null) return;
+        // Preserve live IsSpeaking — voice_state events don't carry speaking state
+        var prev = VoiceMembers.FirstOrDefault(x => x.UserId == m.UserId);
+        if (prev?.IsSpeaking == true)
+            m = new DiscordMember
+            {
+                UserId = m.UserId, Username = m.Username, Nick = m.Nick,
+                IsMuted = m.IsMuted, IsDeafened = m.IsDeafened,
+                IsStreaming = m.IsStreaming, IsSpeaking = true,
+            };
         VoiceMembers = VoiceMembers
             .Where(x => x.UserId != m.UserId)
             .Append(m)
@@ -762,7 +771,29 @@ public sealed class DiscordService : IDisposable
             var data      = await SendCommandAsync("GET_SELECTED_VOICE_CHANNEL", new JsonObject());
             var channelId = data?["id"]?.GetValue<string>();
 
-            if (channelId == _currentChannelId) return;
+            if (channelId == _currentChannelId)
+            {
+                // Still in same channel — check whether self_stream changed (Go Live toggle)
+                if (channelId != null && _currentUserId != null)
+                {
+                    var states = data?["voice_states"]?.AsArray();
+                    if (states != null)
+                    {
+                        foreach (var s in states)
+                        {
+                            if (s?["user"]?["id"]?.GetValue<string>() != _currentUserId) continue;
+                            var nowStreaming = s?["voice_state"]?["self_stream"]?.GetValue<bool>() ?? false;
+                            if (nowStreaming != _selfStreaming)
+                            {
+                                _selfStreaming = nowStreaming;
+                                StreamingStateChanged?.Invoke(_selfStreaming);
+                            }
+                            break;
+                        }
+                    }
+                }
+                return;
+            }
 
             if (channelId == null)
             {

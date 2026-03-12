@@ -739,7 +739,10 @@ public sealed class DiscordPanel : UserControl
     {
         if (InvokeRequired) { BeginInvoke(() => OnStreamingStateChanged(streaming)); return; }
         _streamButton.Text      = streaming ? "🔴  STREAMING"         : "📺  STREAM IN DISCORD";
-        _streamButton.BackColor = streaming ? AppTheme.Danger          : AppTheme.BgCard;
+        _streamButton.BackColor = streaming ? AppTheme.Accent          : AppTheme.BgCard;
+        _streamButton.ForeColor = streaming ? Color.White               : AppTheme.TextMuted;
+        _streamButton.FlatAppearance.MouseOverBackColor =
+            streaming ? AppTheme.AccentHover : AppTheme.BgPanel;
     }
 
     private void OnMessageReceived(DiscordMessage msg)
