@@ -20,6 +20,7 @@ public sealed class GoogleCalendarPanel : UserControl
     private readonly Button  _nextMonthBtn;
     private readonly Control _monthPanel;  // CalendarGrid — file-scoped, stored as Control
     private readonly Panel   _scrollPanel;
+    private readonly Dictionary<DateTime, int> _dayScrollY = new();
 
     private const int HeaderH    = 44;
     private const int MonthAreaH = 32 + 22 + 32 * 6; // NavH + DowH + 6 rows = 246
@@ -63,6 +64,7 @@ public sealed class GoogleCalendarPanel : UserControl
 
         var grid = new CalendarGrid();
         grid.SetData(_viewMonth, BuildEventDays());
+        grid.DayClicked += OnDayClicked;
         _monthPanel = grid;
 
         _scrollPanel = new Panel
@@ -150,6 +152,7 @@ public sealed class GoogleCalendarPanel : UserControl
     private void RebuildCards()
     {
         _scrollPanel.Controls.Clear();
+        _dayScrollY.Clear();
 
         // Reserve scrollbar width so adding content never triggers a horizontal bar
         int contentW = Math.Max(1, _scrollPanel.Width - SystemInformation.VerticalScrollBarWidth - 16);
@@ -189,6 +192,7 @@ public sealed class GoogleCalendarPanel : UserControl
             if (dayKey != lastDayHeader)
             {
                 lastDayHeader = dayKey;
+                _dayScrollY[ev.Start.Date] = y;   // record scroll offset for this day
                 bool isToday    = ev.Start.Date == DateTime.Today;
                 bool isTomorrow = ev.Start.Date == DateTime.Today.AddDays(1);
                 string label = isToday    ? $"TODAY  –  {ev.Start:dddd, MMMM d}"
@@ -215,6 +219,12 @@ public sealed class GoogleCalendarPanel : UserControl
         }
 
         _scrollPanel.AutoScrollMinSize = new Size(1, y + 8);
+    }
+
+    private void OnDayClicked(DateTime date)
+    {
+        if (_dayScrollY.TryGetValue(date, out int y))
+            _scrollPanel.AutoScrollPosition = new Point(0, y);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -265,12 +275,15 @@ file sealed class CalendarGrid : Control
     private const int RowH = 32;
     private const int Rows = 6;
 
+    public event Action<DateTime>? DayClicked;
+
     public CalendarGrid()
     {
         SetStyle(ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.AllPaintingInWmPaint  |
                  ControlStyles.UserPaint             |
                  ControlStyles.ResizeRedraw, true);
+        Cursor = Cursors.Hand;
     }
 
     public void SetData(DateTime viewMonth, HashSet<DateTime> eventDays)
@@ -278,6 +291,34 @@ file sealed class CalendarGrid : Control
         _viewMonth = viewMonth;
         _eventDays = eventDays;
         Invalidate();
+    }
+
+    protected override void OnMouseClick(MouseEventArgs e)
+    {
+        base.OnMouseClick(e);
+        int cellW    = (ClientSize.Width - 16) / 7;
+        int gridLeft = 8;
+        int startDay = (int)_viewMonth.DayOfWeek;
+        int daysInMon = DateTime.DaysInMonth(_viewMonth.Year, _viewMonth.Month);
+
+        for (int row = 0; row < Rows; row++)
+        {
+            for (int col = 0; col < 7; col++)
+            {
+                int dayNum = row * 7 + col - startDay + 1;
+                if (dayNum < 1 || dayNum > daysInMon) continue;
+
+                int cellX = gridLeft + col * cellW;
+                int cellY = NavH + DowH + row * RowH;
+                if (e.X >= cellX && e.X < cellX + cellW && e.Y >= cellY && e.Y < cellY + RowH)
+                {
+                    var date = new DateTime(_viewMonth.Year, _viewMonth.Month, dayNum);
+                    if (_eventDays.Contains(date))
+                        DayClicked?.Invoke(date);
+                    return;
+                }
+            }
+        }
     }
 
     protected override void OnPaintBackground(PaintEventArgs e)
