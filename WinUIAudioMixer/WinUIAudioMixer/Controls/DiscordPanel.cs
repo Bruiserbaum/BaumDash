@@ -50,6 +50,7 @@ public sealed class DiscordPanel : UserControl
     private readonly Button      _refreshButton;
     private readonly Button      _micButton;
     private readonly Button      _streamButton;
+    private bool                 _manualStreaming;
     private readonly Panel       _memberListPanel;
     private readonly Label       _statusLabel;
     private readonly RichTextBox _chatBox;
@@ -714,6 +715,12 @@ public sealed class DiscordPanel : UserControl
     {
         if (InvokeRequired) { BeginInvoke(() => OnVoiceStateChanged(members)); return; }
         _members = members;
+        // Reset manual streaming flag when we leave the voice channel
+        if (members.Count == 0 && _manualStreaming)
+        {
+            _manualStreaming = false;
+            ApplyStreamingVisual(false);
+        }
         RebuildMemberList();
         Invalidate();
     }
@@ -738,6 +745,12 @@ public sealed class DiscordPanel : UserControl
     private void OnStreamingStateChanged(bool streaming)
     {
         if (InvokeRequired) { BeginInvoke(() => OnStreamingStateChanged(streaming)); return; }
+        _manualStreaming = streaming;
+        ApplyStreamingVisual(streaming);
+    }
+
+    private void ApplyStreamingVisual(bool streaming)
+    {
         _streamButton.Text      = streaming ? "🔴  STREAMING"         : "📺  STREAM IN DISCORD";
         _streamButton.BackColor = streaming ? AppTheme.Accent          : AppTheme.BgCard;
         _streamButton.ForeColor = streaming ? Color.White               : AppTheme.TextMuted;
@@ -815,6 +828,11 @@ public sealed class DiscordPanel : UserControl
 
     private void OnStreamClick(object? sender, EventArgs e)
     {
+        // Discord's local RPC doesn't expose Go Live state, so toggle manually.
+        _manualStreaming = !_manualStreaming;
+        ApplyStreamingVisual(_manualStreaming);
+
+        // Focus Discord so the user can start/stop the stream there.
         try
         {
             var proc = System.Diagnostics.Process.GetProcessesByName("Discord").FirstOrDefault();
