@@ -665,30 +665,42 @@ public sealed class DiscordPanel : UserControl
         Invalidate();
     }
 
+    // Appending text to a ReadOnly RichTextBox triggers a system beep on Windows
+    // (EM_REPLACESEL on a read-only control). Temporarily lifting ReadOnly suppresses it.
+    private void ChatAppend(Action appendAction)
+    {
+        _chatBox.ReadOnly = false;
+        try   { appendAction(); }
+        finally { _chatBox.ReadOnly = true; }
+    }
+
     private void PopulateChatHistory()
     {
         var recent = _discord.RecentMessages;
         if (recent.Count == 0) return;
 
-        _chatBox.SelectionStart  = _chatBox.TextLength;
-        _chatBox.SelectionLength = 0;
-        _chatBox.SelectionColor  = AppTheme.TextMuted;
-        _chatBox.AppendText("── Previous messages ──\n");
-
-        foreach (var msg in recent)
+        ChatAppend(() =>
         {
-            _chatBox.SelectionColor = AppTheme.TextMuted;
-            _chatBox.AppendText($"  ");
-            _chatBox.SelectionColor = AppTheme.Accent;
-            _chatBox.AppendText($"{msg.Author}: ");
-            _chatBox.SelectionColor = AppTheme.TextPrimary;
-            _chatBox.AppendText($"{msg.Content}\n");
-        }
+            _chatBox.SelectionStart  = _chatBox.TextLength;
+            _chatBox.SelectionLength = 0;
+            _chatBox.SelectionColor  = AppTheme.TextMuted;
+            _chatBox.AppendText("── Previous messages ──\n");
 
-        _chatBox.SelectionColor = AppTheme.TextMuted;
-        _chatBox.AppendText("────────────────────────\n");
-        _chatBox.SelectionStart = _chatBox.TextLength;
-        _chatBox.ScrollToCaret();
+            foreach (var msg in recent)
+            {
+                _chatBox.SelectionColor = AppTheme.TextMuted;
+                _chatBox.AppendText($"  ");
+                _chatBox.SelectionColor = AppTheme.Accent;
+                _chatBox.AppendText($"{msg.Author}: ");
+                _chatBox.SelectionColor = AppTheme.TextPrimary;
+                _chatBox.AppendText($"{msg.Content}\n");
+            }
+
+            _chatBox.SelectionColor = AppTheme.TextMuted;
+            _chatBox.AppendText("────────────────────────\n");
+            _chatBox.SelectionStart = _chatBox.TextLength;
+            _chatBox.ScrollToCaret();
+        });
     }
 
     private void UpdateStatusLabel()
@@ -767,25 +779,28 @@ public sealed class DiscordPanel : UserControl
             msg.GuildId != _guildFilter)
             return;
 
-        _chatBox.SelectionStart  = _chatBox.TextLength;
-        _chatBox.SelectionLength = 0;
-        _chatBox.SelectionColor  = AppTheme.TextMuted;
-        _chatBox.AppendText($"[{DateTime.Now:HH:mm}] ");
-        _chatBox.SelectionColor = AppTheme.Accent;
-        _chatBox.AppendText($"{msg.Author}: ");
-        _chatBox.SelectionColor = AppTheme.TextPrimary;
-        _chatBox.AppendText($"{msg.Content}\n");
-
-        const int maxLines = 200;
-        var lines = _chatBox.Lines;
-        if (lines.Length > maxLines)
+        ChatAppend(() =>
         {
-            _chatBox.Select(0, _chatBox.GetFirstCharIndexFromLine(lines.Length - maxLines));
-            _chatBox.SelectedText = "";
-        }
+            _chatBox.SelectionStart  = _chatBox.TextLength;
+            _chatBox.SelectionLength = 0;
+            _chatBox.SelectionColor  = AppTheme.TextMuted;
+            _chatBox.AppendText($"[{DateTime.Now:HH:mm}] ");
+            _chatBox.SelectionColor = AppTheme.Accent;
+            _chatBox.AppendText($"{msg.Author}: ");
+            _chatBox.SelectionColor = AppTheme.TextPrimary;
+            _chatBox.AppendText($"{msg.Content}\n");
 
-        _chatBox.SelectionStart = _chatBox.TextLength;
-        _chatBox.ScrollToCaret();
+            const int maxLines = 200;
+            var lines = _chatBox.Lines;
+            if (lines.Length > maxLines)
+            {
+                _chatBox.Select(0, _chatBox.GetFirstCharIndexFromLine(lines.Length - maxLines));
+                _chatBox.SelectedText = "";
+            }
+
+            _chatBox.SelectionStart = _chatBox.TextLength;
+            _chatBox.ScrollToCaret();
+        });
     }
 
     // ── Member list ───────────────────────────────────────────────────────────
