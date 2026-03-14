@@ -1,5 +1,6 @@
 using System.Drawing.Drawing2D;
 using System.Runtime.InteropServices;
+using Microsoft.Web.WebView2.WinForms;
 using WinUIAudioMixer.Services;
 
 namespace WinUIAudioMixer.Controls;
@@ -17,7 +18,7 @@ public sealed class DiscordPanel : UserControl
     // State
     private DiscordConnectionState _connState  = DiscordConnectionState.Disconnected;
     private List<DiscordMember>    _members    = new();
-    private enum                   ActiveTab   { Discord, Ai, ChatGpt, Pc, Calendar, Ha, Apps }
+    private enum                   ActiveTab   { Discord, Ai, ChatGpt, Pc, Calendar, Ha, Apps, Status }
     private ActiveTab              _activeTab  = ActiveTab.Discord;
     private bool                   _aiWelcomed = false;
 
@@ -29,6 +30,12 @@ public sealed class DiscordPanel : UserControl
     private readonly Button _tabCalendar;
     private readonly Button _tabHa;
     private readonly Button _tabApps;
+    private readonly Button _tabStatus;
+
+    // Status panel
+    private readonly Panel    _statusPanel;
+    private readonly WebView2 _statusWebView;
+    private          string   _statusUrl = "";
 
     // Home Assistant panel
     private readonly HomeAssistantService?               _haSvc;
@@ -93,7 +100,7 @@ public sealed class DiscordPanel : UserControl
     private const int ChatHeaderY = VoiceListY + VoiceListH + 12; // 334
     private const int ChatY       = ChatHeaderY + 30;             // 364
 
-    public DiscordPanel(DiscordService discord, AnythingLLMService? aiSvc = null, ChatGptService? chatGptSvc = null, GoogleCalendarService? calSvc = null, HomeAssistantService? haSvc = null)
+    public DiscordPanel(DiscordService discord, AnythingLLMService? aiSvc = null, ChatGptService? chatGptSvc = null, GoogleCalendarService? calSvc = null, HomeAssistantService? haSvc = null, string? statusUrl = null)
     {
         _discord     = discord;
         _aiSvc       = aiSvc;
@@ -126,6 +133,9 @@ public sealed class DiscordPanel : UserControl
 
         _tabApps = MakeTabButton("Apps", active: false);
         _tabApps.Click += (_, _) => SwitchTab(ActiveTab.Apps);
+
+        _tabStatus = MakeTabButton("Status", active: false);
+        _tabStatus.Click += (_, _) => SwitchTab(ActiveTab.Status);
 
         // ── Discord controls ──────────────────────────────────────────────────
         bool configured = discord.IsConfigured;
@@ -267,6 +277,21 @@ public sealed class DiscordPanel : UserControl
         // App shortcuts panel
         _appsPanel = new AppShortcutsPanel { Visible = false };
 
+        // ── Status panel ──────────────────────────────────────────────────────
+        _statusUrl    = statusUrl ?? "";
+        _statusWebView = new WebView2
+        {
+            Visible    = false,
+            DefaultBackgroundColor = AppTheme.BgPanel,
+        };
+        if (!string.IsNullOrWhiteSpace(_statusUrl))
+        {
+            try { _statusWebView.Source = new Uri(_statusUrl); }
+            catch { }
+        }
+        _statusPanel = new Panel { BackColor = Color.Transparent, Visible = false };
+        _statusPanel.Controls.Add(_statusWebView);
+
         // ── Home Assistant panel ───────────────────────────────────────────────
         _haPanel = new Panel { BackColor = Color.Transparent, AutoScroll = true, Visible = false };
         BuildHaPanel();
@@ -276,8 +301,8 @@ public sealed class DiscordPanel : UserControl
         {
             _statusLabel, _connectButton, _refreshButton, _micButton, _streamButton,
             _memberListPanel, _chatBox,
-            _tabDiscord, _tabAi, _tabChatGpt, _tabPc, _tabCalendar, _tabHa, _tabApps,
-            _aiPanel, _chatGptPanel, _pcPanel, _calendarPanel, _haPanel, _appsPanel,
+            _tabDiscord, _tabAi, _tabChatGpt, _tabPc, _tabCalendar, _tabHa, _tabApps, _tabStatus,
+            _aiPanel, _chatGptPanel, _pcPanel, _calendarPanel, _haPanel, _appsPanel, _statusPanel,
         });
 
         if (configured)
@@ -309,7 +334,7 @@ public sealed class DiscordPanel : UserControl
             var tabDefs = new (Button btn, int width)[]
             {
                 (_tabDiscord,  84), (_tabAi,      80), (_tabChatGpt, 84),
-                (_tabPc,       80), (_tabCalendar, 90), (_tabHa,     102), (_tabApps, 62),
+                (_tabPc,       80), (_tabCalendar, 90), (_tabHa,     102), (_tabApps, 62), (_tabStatus, 68),
             };
             foreach (var (btn, bw) in tabDefs)
             {
@@ -330,13 +355,15 @@ public sealed class DiscordPanel : UserControl
         _micButton   .SetBounds(x,       by, 170, 40);
         _streamButton.SetBounds(x + 178, by, 190, 40);
 
-        // AI / ChatGPT / PC / Calendar / HA / Apps panels
+        // AI / ChatGPT / PC / Calendar / HA / Apps / Status panels
         _aiPanel       .SetBounds(0, TabBarH, w, h - TabBarH);
         _chatGptPanel  .SetBounds(0, TabBarH, w, h - TabBarH);
         _pcPanel       .SetBounds(0, TabBarH, w, h - TabBarH);
         _calendarPanel .SetBounds(0, TabBarH, w, h - TabBarH);
         _haPanel       .SetBounds(0, TabBarH, w, h - TabBarH);
         _appsPanel     .SetBounds(0, TabBarH, w, h - TabBarH);
+        _statusPanel   .SetBounds(0, TabBarH, w, h - TabBarH);
+        _statusWebView .SetBounds(0, 0, w, h - TabBarH);
         LayoutPcPanel();
 
         const int inputH = 38, sendW = 80, micW = 42, pad = 8;
@@ -368,6 +395,7 @@ public sealed class DiscordPanel : UserControl
         bool calendar = tab == ActiveTab.Calendar;
         bool ha       = tab == ActiveTab.Ha;
         bool apps     = tab == ActiveTab.Apps;
+        bool status   = tab == ActiveTab.Status;
 
         _aiPanel       .Visible = ai;
         _chatGptPanel  .Visible = gpt;
@@ -375,6 +403,7 @@ public sealed class DiscordPanel : UserControl
         _calendarPanel .Visible = calendar;
         _haPanel       .Visible = ha;
         _appsPanel     .Visible = apps;
+        _statusPanel   .Visible = status;
 
         bool connected = _connState == DiscordConnectionState.Connected;
         _statusLabel    .Visible = discord;
@@ -394,6 +423,7 @@ public sealed class DiscordPanel : UserControl
             (_tabCalendar, calendar),
             (_tabHa,       ha),
             (_tabApps,     apps),
+            (_tabStatus,   status),
         })
         {
             btn.BackColor = active ? AppTheme.BgCard     : Color.Transparent;
@@ -470,7 +500,30 @@ public sealed class DiscordPanel : UserControl
             _haTimer?.Stop();
         }
 
+        if (status && !string.IsNullOrWhiteSpace(_statusUrl))
+        {
+            try
+            {
+                if (_statusWebView.CoreWebView2 != null)
+                    _statusWebView.CoreWebView2.Reload();
+                else if (_statusWebView.Source == null || _statusWebView.Source.AbsoluteUri == "about:blank")
+                    _statusWebView.Source = new Uri(_statusUrl);
+            }
+            catch { }
+        }
+
         Invalidate();
+    }
+
+    /// <summary>Updates the status page URL at runtime (called after settings save).</summary>
+    public void SetStatusUrl(string url)
+    {
+        _statusUrl = url ?? "";
+        if (!string.IsNullOrWhiteSpace(_statusUrl))
+        {
+            try { _statusWebView.Source = new Uri(_statusUrl); }
+            catch { }
+        }
     }
 
     private async Task ShowReadyWithWorkspacesAsync()
@@ -1299,7 +1352,7 @@ public sealed class DiscordPanel : UserControl
 
     /// <summary>
     /// Shows/hides Discord panel tabs based on the supplied list of names to hide.
-    /// Tab names: "Discord", "AI Chat", "ChatGPT", "PC Perf", "Calendar", "Home Asst", "Apps"
+    /// Tab names: "Discord", "AI Chat", "ChatGPT", "PC Perf", "Calendar", "Home Asst", "Apps", "Status"
     /// </summary>
     public void ApplyTabVisibility(IReadOnlyList<string> hiddenTabs)
     {
@@ -1312,6 +1365,7 @@ public sealed class DiscordPanel : UserControl
             ("Calendar",  _tabCalendar, ActiveTab.Calendar),
             ("Home Asst", _tabHa,       ActiveTab.Ha),
             ("Apps",      _tabApps,     ActiveTab.Apps),
+            ("Status",    _tabStatus,   ActiveTab.Status),
         };
 
         foreach (var (name, btn, _) in map)
@@ -1362,6 +1416,7 @@ public sealed class DiscordPanel : UserControl
             _haTimer?.Stop();
             _haTimer?.Dispose();
             _pcSvc.Dispose();
+            _statusWebView.Dispose();
             _discord.ConnectionStateChanged -= OnConnectionChanged;
             _discord.VoiceStateChanged      -= OnVoiceStateChanged;
             _discord.MicMuteChanged         -= OnMicMuteChanged;

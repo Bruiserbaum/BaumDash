@@ -8,10 +8,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <Version>2.7.3</Version>
+    <Version>2.7.4</Version>
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.4" />
     <PackageReference Include="System.Speech" Version="8.0.0" />
   </ItemGroup>

@@ -1,6 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.7.3"
-#define AppVersionFull "2.7.3"
+#define AppVersion   "2.7.4"
+#define AppVersionFull "2.7.4"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -97,6 +97,10 @@ Source: "{#PublishDir}\Microsoft.Windows.SDK.NET.dll";              DestDir: "{a
 Source: "{#PublishDir}\System.Security.Cryptography.ProtectedData.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PublishDir}\System.Speech.dll";                          DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PublishDir}\WinRT.Runtime.dll";                          DestDir: "{app}"; Flags: ignoreversion
+; WebView2 (Status tab browser)
+Source: "{#PublishDir}\Microsoft.Web.WebView2.Core.dll";            DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\Microsoft.Web.WebView2.WinForms.dll";        DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\WebView2Loader.dll";                         DestDir: "{app}"; Flags: ignoreversion
 
 ; Config files — never overwrite if user already configured them
 Source: "{#PublishDir}\ha-config.json";            DestDir: "{app}"; Flags: onlyifdoesntexist

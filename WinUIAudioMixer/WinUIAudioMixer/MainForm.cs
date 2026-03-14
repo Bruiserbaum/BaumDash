@@ -32,6 +32,8 @@ public sealed class MainForm : Form
 
     // Layout profile: "auto" / "1920" / "2560"
     private string _layoutProfile = "auto";
+    // Status tab URL (from general-config.json)
+    private string _statusUrl = "";
 
     // Drag support (borderless move)
     private Point   _dragStart;
@@ -96,6 +98,7 @@ public sealed class MainForm : Form
                 {
                     _closeToTray   = cfg.CloseToTray;
                     _layoutProfile = cfg.LayoutProfile ?? "auto";
+                    _statusUrl     = cfg.StatusUrl ?? "";
                     Services.UpdateService.Channel = cfg.ReleaseChannel ?? "stable";
                     AppTheme.Apply(cfg.Theme, cfg.CustomAccentHex);
                     if (!string.IsNullOrEmpty(cfg.BgImagePath) && File.Exists(cfg.BgImagePath))
@@ -358,7 +361,7 @@ public sealed class MainForm : Form
         _devicePanel  = new AudioDevicePanel(_audioDeviceSvc) { Dock = DockStyle.Fill };
         _volumePanel  = new AppVolumePanel(_audioSessionSvc, _weatherSvc) { Dock = DockStyle.Fill };
         _mediaPanel   = new MediaPanel()                                 { Dock = DockStyle.Fill };
-        _discordPanel = new DiscordPanel(_discordSvc, _aiSvc, _chatGptSvc, _calSvc, _haSvc) { Dock = DockStyle.Fill };
+        _discordPanel = new DiscordPanel(_discordSvc, _aiSvc, _chatGptSvc, _calSvc, _haSvc, _statusUrl) { Dock = DockStyle.Fill };
 
         // Media control event wiring
         _mediaPanel.PlayPauseRequested += async () => { if (_mediaSvc != null) await _mediaSvc.TogglePlayPauseAsync(); };
@@ -462,6 +465,7 @@ public sealed class MainForm : Form
                     _devicePanel?.ApplyGpuPlatform(cfg.GpuPlatform);
                     ApplyLayout(cfg.LayoutProfile ?? "auto");
                     _discordPanel?.ApplyTabVisibility(cfg.HiddenDiscordTabs ?? new List<string>());
+                    _discordPanel?.SetStatusUrl(cfg.StatusUrl ?? "");
                 }
             }
         }

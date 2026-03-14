@@ -21,4 +21,6 @@ public sealed class GeneralConfig
     public List<string> HiddenDiscordTabs { get; set; } = new();
     /// <summary>stable = production releases only; dev = include pre-release / Dev-branch builds.</summary>
     public string ReleaseChannel { get; set; } = "stable";
+    /// <summary>URL of the BaumLab status page shown in the Status tab.</summary>
+    public string StatusUrl { get; set; } = "";
 }

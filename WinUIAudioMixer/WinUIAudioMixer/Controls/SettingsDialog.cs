@@ -41,8 +41,9 @@ public sealed class SettingsDialog : Form
     private RadioButton? _rbChannelStable, _rbChannelDev;
 
     // Discord tab visibility
-    private static readonly string[] DiscordTabNames = { "Discord", "AI Chat", "ChatGPT", "PC Perf", "Calendar", "Home Asst", "Apps" };
+    private static readonly string[] DiscordTabNames = { "Discord", "AI Chat", "ChatGPT", "PC Perf", "Calendar", "Home Asst", "Apps", "Status" };
     private CheckBox[]? _discordTabCheckboxes;
+    private TextBox?    _statusUrlBox;
     private TextBox?     _bgPathBox;
     private ComboBox?    _bgModeCombo;
     private TrackBar?    _bgAlphaSlider;
@@ -1060,11 +1061,11 @@ public sealed class SettingsDialog : Form
         AddSectionLabel(scroll, "DISCORD PANEL TABS  (uncheck to hide)", ref y);
 
         _discordTabCheckboxes = new CheckBox[DiscordTabNames.Length];
-        // Row 1: first 4 tabs; Row 2: last 3 tabs
+        // Row 1: first 4 tabs; Row 2: last 4 tabs
         int tabRow1Y = y;
         int tabRow2Y = y + 26;
         int[] row1Cols = { 0, 1, 2, 3 };
-        int[] row2Cols = { 4, 5, 6 };
+        int[] row2Cols = { 4, 5, 6, 7 };
         int colW = (FieldW - FieldX) / 4;
 
         for (int i = 0; i < DiscordTabNames.Length; i++)
@@ -1086,6 +1087,23 @@ public sealed class SettingsDialog : Form
             scroll.Controls.Add(chk);
         }
         y = tabRow2Y + 26;
+
+        // ── Status Page URL ───────────────────────────────────────────────────
+        y += 2;
+        AddSectionLabel(scroll, "STATUS PAGE URL", ref y);
+        AddHint(scroll, "URL of the BaumLab status page shown in the Status tab.", ref y, 22);
+        _statusUrlBox = new TextBox
+        {
+            BackColor       = AppTheme.BgCard,
+            ForeColor       = AppTheme.TextPrimary,
+            Font            = AppTheme.FontLabel,
+            BorderStyle     = BorderStyle.FixedSingle,
+            PlaceholderText = "http://192.168.x.x:port/status",
+            Location        = new Point(FieldX, y),
+            Size            = new Size(FieldW - FieldX, 26),
+        };
+        scroll.Controls.Add(_statusUrlBox);
+        y += 32;
 
         // ── Background Image ──────────────────────────────────────────────────
         y += 2;
@@ -1473,6 +1491,9 @@ public sealed class SettingsDialog : Form
                     {
                         if (_rbChannelStable != null) _rbChannelStable.Checked = true;
                     }
+
+                    if (_statusUrlBox != null)
+                        _statusUrlBox.Text = cfg.StatusUrl ?? "";
                 }
             }
             else
@@ -1575,6 +1596,8 @@ public sealed class SettingsDialog : Form
                         hiddenTabs.Add(DiscordTabNames[i]);
             }
 
+            string statusUrl = _statusUrlBox?.Text.Trim() ?? "";
+
             File.WriteAllText(Path.Combine(dir, "general-config.json"),
                 JsonSerializer.Serialize(new WinUIAudioMixer.Models.GeneralConfig
                 {
@@ -1588,6 +1611,7 @@ public sealed class SettingsDialog : Form
                     LayoutProfile     = layoutProf,
                     HiddenDiscordTabs = hiddenTabs,
                     ReleaseChannel    = channel,
+                    StatusUrl         = statusUrl,
                 }, opts));
 
             // Apply channel immediately without restart
