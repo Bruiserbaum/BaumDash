@@ -281,14 +281,10 @@ public sealed class DiscordPanel : UserControl
         _statusUrl    = statusUrl ?? "";
         _statusWebView = new WebView2
         {
-            Visible    = false,
+            Visible                = false,
             DefaultBackgroundColor = AppTheme.BgPanel,
         };
-        if (!string.IsNullOrWhiteSpace(_statusUrl))
-        {
-            try { _statusWebView.Source = new Uri(_statusUrl); }
-            catch { }
-        }
+        // Do NOT set Source here — WebView2 must be fully initialised first
         _statusPanel = new Panel { BackColor = Color.Transparent, Visible = false };
         _statusPanel.Controls.Add(_statusWebView);
 
@@ -501,16 +497,7 @@ public sealed class DiscordPanel : UserControl
         }
 
         if (status && !string.IsNullOrWhiteSpace(_statusUrl))
-        {
-            try
-            {
-                if (_statusWebView.CoreWebView2 != null)
-                    _statusWebView.CoreWebView2.Reload();
-                else if (_statusWebView.Source == null || _statusWebView.Source.AbsoluteUri == "about:blank")
-                    _statusWebView.Source = new Uri(_statusUrl);
-            }
-            catch { }
-        }
+            _ = NavigateStatusAsync(_statusUrl, reload: true);
 
         Invalidate();
     }
@@ -519,11 +506,35 @@ public sealed class DiscordPanel : UserControl
     public void SetStatusUrl(string url)
     {
         _statusUrl = url ?? "";
-        if (!string.IsNullOrWhiteSpace(_statusUrl))
+        if (!string.IsNullOrWhiteSpace(_statusUrl) && _activeTab == ActiveTab.Status)
+            _ = NavigateStatusAsync(_statusUrl, reload: false);
+    }
+
+    private async Task NavigateStatusAsync(string url, bool reload)
+    {
+        try
         {
-            try { _statusWebView.Source = new Uri(_statusUrl); }
-            catch { }
+            if (_statusWebView.CoreWebView2 == null)
+            {
+                // Initialise with a writable user-data folder so WebView2 can store its state
+                var udFolder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "BaumDash", "WebView2");
+                var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
+                    null, udFolder);
+                await _statusWebView.EnsureCoreWebView2Async(env);
+
+                // Allow self-signed / internal certificates (local status page)
+                _statusWebView.CoreWebView2.ServerCertificateErrorDetected += (_, e) =>
+                    e.Action = Microsoft.Web.WebView2.Core.CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
+            }
+
+            if (reload && _statusWebView.CoreWebView2.Source == url)
+                _statusWebView.CoreWebView2.Reload();
+            else
+                _statusWebView.CoreWebView2.Navigate(url);
         }
+        catch { }
     }
 
     private async Task ShowReadyWithWorkspacesAsync()
