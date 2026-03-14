@@ -281,10 +281,11 @@ public sealed class DiscordPanel : UserControl
         _statusUrl    = statusUrl ?? "";
         _statusWebView = new WebView2
         {
-            Visible                = false,
+            // Do NOT set Visible = false here — the control must be visible within
+            // its parent panel so WinForms creates its HWND when the panel shows.
+            // Parent panel (_statusPanel) visibility controls whether the tab is shown.
             DefaultBackgroundColor = AppTheme.BgPanel,
         };
-        // Do NOT set Source here — WebView2 must be fully initialised first
         _statusPanel = new Panel { BackColor = Color.Transparent, Visible = false };
         _statusPanel.Controls.Add(_statusWebView);
 
@@ -497,7 +498,9 @@ public sealed class DiscordPanel : UserControl
         }
 
         if (status && !string.IsNullOrWhiteSpace(_statusUrl))
-            _ = NavigateStatusAsync(_statusUrl, reload: true);
+            // BeginInvoke defers until after the current message dispatch so that
+            // _statusPanel's handle is fully created before EnsureCoreWebView2Async runs.
+            BeginInvoke(async () => await NavigateStatusAsync(_statusUrl, reload: true));
 
         Invalidate();
     }
@@ -507,7 +510,7 @@ public sealed class DiscordPanel : UserControl
     {
         _statusUrl = url ?? "";
         if (!string.IsNullOrWhiteSpace(_statusUrl) && _activeTab == ActiveTab.Status)
-            _ = NavigateStatusAsync(_statusUrl, reload: false);
+            BeginInvoke(async () => await NavigateStatusAsync(_statusUrl, reload: false));
     }
 
     private async Task NavigateStatusAsync(string url, bool reload)
