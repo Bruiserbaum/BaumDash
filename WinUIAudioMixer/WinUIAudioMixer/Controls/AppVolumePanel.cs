@@ -204,15 +204,25 @@ public sealed class AppVolumePanel : UserControl
             DrawWeatherIcon(g, _weather.Condition, cx, wy);
             wy += 56;
 
-            using var condBrush   = new SolidBrush(AppTheme.TextPrimary);
+            using var tempBrush   = new SolidBrush(AppTheme.TextPrimary);
+            using var condBrush   = new SolidBrush(AppTheme.TextSecondary);
             using var detailBrush = new SolidBrush(AppTheme.TextSecondary);
 
-            var condRect = new RectangleF(0, wy, ClientSize.Width, 32);
-            g.DrawString(_weather.Condition, AppTheme.FontClockDate, condBrush, condRect, wFmt);
-            wy += 34;
+            // Current temperature — large, prominent
+            using var tempFont = new Font("Segoe UI Light", 30f, FontStyle.Regular, GraphicsUnit.Pixel);
+            string tempNow = $"{_weather.TempNow:F0}{_weather.TempUnit}";
+            var tempRect = new RectangleF(0, wy, ClientSize.Width, 38);
+            g.DrawString(tempNow, tempFont, tempBrush, tempRect, wFmt);
+            wy += 36;
 
-            string hiLo   = $"H: {_weather.TempHigh:F0}{_weather.TempUnit}   L: {_weather.TempLow:F0}{_weather.TempUnit}";
-            string wind    = $"Wind: {_weather.WindSpeed:F0} {_weather.WindUnit}";
+            // Condition
+            var condRect = new RectangleF(0, wy, ClientSize.Width, 24);
+            g.DrawString(_weather.Condition, AppTheme.FontClockDate, condBrush, condRect, wFmt);
+            wy += 26;
+
+            // H/L and wind
+            string hiLo = $"H: {_weather.TempHigh:F0}{_weather.TempUnit}   L: {_weather.TempLow:F0}{_weather.TempUnit}";
+            string wind = $"Wind: {_weather.WindSpeed:F0} {_weather.WindUnit}";
             var detailRect = new RectangleF(0, wy, ClientSize.Width, 26);
             g.DrawString($"{hiLo}     {wind}", AppTheme.FontLabel, detailBrush, detailRect, wFmt);
         }
