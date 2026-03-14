@@ -97,6 +97,10 @@ Source: "{#PublishDir}\Microsoft.Windows.SDK.NET.dll";              DestDir: "{a
 Source: "{#PublishDir}\System.Security.Cryptography.ProtectedData.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PublishDir}\System.Speech.dll";                          DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PublishDir}\WinRT.Runtime.dll";                          DestDir: "{app}"; Flags: ignoreversion
+; WebView2 (Status tab browser)
+Source: "{#PublishDir}\Microsoft.Web.WebView2.Core.dll";            DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\Microsoft.Web.WebView2.WinForms.dll";        DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PublishDir}\WebView2Loader.dll";                         DestDir: "{app}"; Flags: ignoreversion
 
 ; Config files — never overwrite if user already configured them
 Source: "{#PublishDir}\ha-config.json";            DestDir: "{app}"; Flags: onlyifdoesntexist
