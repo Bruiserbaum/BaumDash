@@ -197,33 +197,46 @@ public sealed class AppVolumePanel : UserControl
         g.DrawLine(sepPen, x, wy, x + w, wy);
         wy += 18;
 
-        var wFmt = new StringFormat { Alignment = StringAlignment.Center };
+        var wFmt  = new StringFormat { Alignment = StringAlignment.Center };
 
         if (_weather != null)
         {
-            DrawWeatherIcon(g, _weather.Condition, cx, wy);
-            wy += 56;
-
             using var tempBrush   = new SolidBrush(AppTheme.TextPrimary);
             using var condBrush   = new SolidBrush(AppTheme.TextSecondary);
             using var detailBrush = new SolidBrush(AppTheme.TextSecondary);
+            using var mutedBrush  = new SolidBrush(AppTheme.TextMuted);
 
-            // Current temperature — large, prominent
-            using var tempFont = new Font("Segoe UI Light", 30f, FontStyle.Regular, GraphicsUnit.Pixel);
+            // Two-column layout: icon+condition on left, large temp on right
+            int leftW  = w / 2;
+            int rightW = w - leftW;
+            int leftCx = x + leftW / 2;
+            int rightX = x + leftW + 8;
+
+            // ── Left: icon + condition ────────────────────────────────────────
+            DrawWeatherIcon(g, _weather.Condition, leftCx, wy);
+
+            using var condFmt = new StringFormat { Alignment = StringAlignment.Center };
+            var condRect = new RectangleF(x, wy + 58, leftW, 26);
+            g.DrawString(_weather.Condition, AppTheme.FontClockDate, condBrush, condRect, condFmt);
+
+            // ── Right: large temperature + "Current Temp" label ───────────────
+            using var bigTempFont  = new Font("Segoe UI Light", 62f, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var lblFont      = new Font("Segoe UI",       11f, FontStyle.Regular, GraphicsUnit.Pixel);
+            using var rightFmt     = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
             string tempNow = $"{_weather.TempNow:F0}{_weather.TempUnit}";
-            var tempRect = new RectangleF(0, wy, ClientSize.Width, 38);
-            g.DrawString(tempNow, tempFont, tempBrush, tempRect, wFmt);
-            wy += 36;
+            var bigRect    = new RectangleF(rightX, wy, rightW - 8, 72);
+            g.DrawString(tempNow, bigTempFont, tempBrush, bigRect, rightFmt);
 
-            // Condition
-            var condRect = new RectangleF(0, wy, ClientSize.Width, 24);
-            g.DrawString(_weather.Condition, AppTheme.FontClockDate, condBrush, condRect, wFmt);
-            wy += 26;
+            using var lblFmt = new StringFormat { Alignment = StringAlignment.Center };
+            var lblRect = new RectangleF(rightX, wy + 72, rightW - 8, 18);
+            g.DrawString("Current Temp", lblFont, mutedBrush, lblRect, lblFmt);
 
-            // H/L and wind
+            // ── Bottom: H/L + wind (full width) ──────────────────────────────
+            int bottomY = wy + 98;
             string hiLo = $"H: {_weather.TempHigh:F0}{_weather.TempUnit}   L: {_weather.TempLow:F0}{_weather.TempUnit}";
-            string wind = $"Wind: {_weather.WindSpeed:F0} {_weather.WindUnit}";
-            var detailRect = new RectangleF(0, wy, ClientSize.Width, 26);
+            string wind  = $"Wind: {_weather.WindSpeed:F0} {_weather.WindUnit}";
+            var detailRect = new RectangleF(x, bottomY, w, 24);
             g.DrawString($"{hiLo}     {wind}", AppTheme.FontLabel, detailBrush, detailRect, wFmt);
         }
         else
