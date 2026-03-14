@@ -519,23 +519,21 @@ public sealed class DiscordPanel : UserControl
         {
             if (_statusWebView.CoreWebView2 == null)
             {
-                // Initialise with a writable user-data folder so WebView2 can store its state
-                var udFolder = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "BaumDash", "WebView2");
-                var env = await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(
-                    null, udFolder);
-                await _statusWebView.EnsureCoreWebView2Async(env);
+                // Use default WebView2 environment — avoids permission/path issues with
+                // custom user-data folders. WebView2 picks its own profile location.
+                await _statusWebView.EnsureCoreWebView2Async(null);
 
-                // Allow self-signed / internal certificates (local status page)
+                // Allow self-signed / internal certificates (local/LAN status pages)
                 _statusWebView.CoreWebView2.ServerCertificateErrorDetected += (_, e) =>
                     e.Action = Microsoft.Web.WebView2.Core.CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
             }
 
-            if (reload && _statusWebView.CoreWebView2.Source == url)
+            // Use the WinForms Source property — more reliable than CoreWebView2.Navigate
+            var uri = new Uri(url);
+            if (reload && _statusWebView.Source == uri)
                 _statusWebView.CoreWebView2.Reload();
             else
-                _statusWebView.CoreWebView2.Navigate(url);
+                _statusWebView.Source = uri;
         }
         catch { }
     }
