@@ -42,16 +42,19 @@ public sealed class MediaSessionService : IDisposable
 
     private void AttachSession(GlobalSystemMediaTransportControlsSession? session)
     {
-        if (_currentSession != null)
+        // Capture in locals to avoid race: another thread (e.g. Dispose) could null
+        // _currentSession between the null check and the member access.
+        var old = _currentSession;
+        if (old != null)
         {
-            _currentSession.MediaPropertiesChanged -= OnMediaPropertiesChanged;
-            _currentSession.PlaybackInfoChanged    -= OnPlaybackInfoChanged;
+            old.MediaPropertiesChanged -= OnMediaPropertiesChanged;
+            old.PlaybackInfoChanged    -= OnPlaybackInfoChanged;
         }
         _currentSession = session;
-        if (_currentSession != null)
+        if (session != null)
         {
-            _currentSession.MediaPropertiesChanged += OnMediaPropertiesChanged;
-            _currentSession.PlaybackInfoChanged    += OnPlaybackInfoChanged;
+            session.MediaPropertiesChanged += OnMediaPropertiesChanged;
+            session.PlaybackInfoChanged    += OnPlaybackInfoChanged;
         }
     }
 
