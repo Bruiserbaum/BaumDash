@@ -54,7 +54,7 @@ The right panel contains 8 tabs. Each tab can be shown or hidden from Settings.
 | **Discord** | Live voice channel member list, mic mute toggle, Go Live button, incoming message feed |
 | **AI Chat** | Chat against a local [AnythingLLM](https://anythingllm.com/) workspace with voice input support |
 | **ChatGPT** | Chat against OpenAI ChatGPT with voice input support |
-| **PC Perf** | Real-time CPU, GPU, RAM, and disk usage metrics |
+| **PC Perf** | Real-time CPU usage + temperature, GPU, RAM, disk, network, and per-drive metrics |
 | **Calendar** | Month calendar grid + upcoming events from any Google Calendar or iCal URL |
 | **Home Asst** | Toggle lights and switches, view live sensor readings via Home Assistant |
 | **Apps** | Customisable app launcher grid — add any installed app as a tile |
