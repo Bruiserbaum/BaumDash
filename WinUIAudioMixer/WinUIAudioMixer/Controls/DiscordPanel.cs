@@ -555,8 +555,12 @@ public sealed class DiscordPanel : UserControl
                 return;
             }
 
-            // Normalise URL: add https:// if no scheme is present
-            if (!url.Contains("://"))
+            // Normalise URL: fix missing colon (https// → https://) or missing scheme entirely
+            if (url.StartsWith("https//", StringComparison.OrdinalIgnoreCase))
+                url = "https://" + url[7..];
+            else if (url.StartsWith("http//", StringComparison.OrdinalIgnoreCase))
+                url = "http://" + url[6..];
+            else if (!url.Contains("://"))
                 url = "https://" + url;
 
             if (_statusWebView.CoreWebView2 == null)
@@ -1019,7 +1023,7 @@ public sealed class DiscordPanel : UserControl
 
         // [0] CPU
         var cpu = new PerfMeter("CPU", GetBarColor(snap.CpuPercent));
-        cpu.Update(snap.CpuPercent, $"{snap.CpuPercent:F0}%");
+        cpu.Update(snap.CpuPercent, FormatCpuLabel(snap));
         _pcMeters.Add(cpu);
 
         // [1] RAM
@@ -1081,7 +1085,7 @@ public sealed class DiscordPanel : UserControl
 
         // [0] CPU
         _pcMeters[0].BarColor = GetBarColor(snap.CpuPercent);
-        _pcMeters[0].Update(snap.CpuPercent, $"{snap.CpuPercent:F0}%");
+        _pcMeters[0].Update(snap.CpuPercent, FormatCpuLabel(snap));
 
         // [1] RAM
         if (_pcMeters.Count > 1)
@@ -1146,6 +1150,14 @@ public sealed class DiscordPanel : UserControl
         pct >= 90 ? AppTheme.Danger  :
         pct >= 70 ? AppTheme.Warning :
         AppTheme.Success;
+
+    private static string FormatCpuLabel(PcSnapshot snap)
+    {
+        string pct = $"{snap.CpuPercent:F0}%";
+        return snap.CpuTempC >= 0
+            ? $"{pct}  ·  {snap.CpuTempC:F0}°C"
+            : pct;
+    }
 
     private static string FormatPcInfo(PcSnapshot snap)
     {

@@ -18,7 +18,9 @@ public sealed record PcSnapshot(
     double                       GpuMemUsedGb,
     double                       GpuMemTotalGb,
     double                       NetBytesPerSec,
-    double                       DiskActivityPercent);
+    double                       DiskActivityPercent,
+    /// <summary>CPU temperature in °C, or -1 if unavailable.</summary>
+    double                       CpuTempC = -1);
 
 public sealed class PcPerformanceService : IDisposable
 {
@@ -36,6 +38,7 @@ public sealed class PcPerformanceService : IDisposable
     private IntPtr _cGpuMemUsed;    // \GPU Adapter Memory(*)\Dedicated Usage
     private IntPtr _cGpuMemLimit;   // \GPU Adapter Memory(*)\Dedicated Limit
     private IntPtr _cDiskTime;      // \PhysicalDisk(_Total)\% Disk Time
+    private IntPtr _cCpuTemp;       // \Thermal Zone Information(*)\Temperature (Kelvin)
     private bool   _pdhReady;
     private bool   _disposed;
 
@@ -80,8 +83,8 @@ public sealed class PcPerformanceService : IDisposable
         foreach (var p in procs) p.Dispose();
         var uptime = TimeSpan.FromMilliseconds(GetTickCount64());
 
-        // GPU util + GPU VRAM + Disk I/O via PDH
-        double gpuPct = 0, gpuMemUsed = 0, gpuMemTotal = 0, diskPct = 0;
+        // GPU util + GPU VRAM + Disk I/O + CPU temp via PDH
+        double gpuPct = 0, gpuMemUsed = 0, gpuMemTotal = 0, diskPct = 0, cpuTempC = -1;
         if (_pdhReady && PdhCollectQueryData(_pdhQuery) == 0)
         {
             var gpuVals = GetCounterArray(_cGpuUtil);
@@ -96,6 +99,18 @@ public sealed class PcPerformanceService : IDisposable
                 PdhGetFormattedCounterValue(_cDiskTime, PDH_FMT_DOUBLE, out _, out var dv) == 0 &&
                 (dv.CStatus & 0x80000000u) == 0)
                 diskPct = Math.Clamp(dv.DoubleValue, 0, 100);
+
+            // CPU temperature — Thermal Zone Information returns Kelvin values.
+            // Take the highest zone temp (typically the CPU package zone).
+            var tempVals = GetCounterArray(_cCpuTemp);
+            if (tempVals.Length > 0)
+            {
+                double maxK = tempVals.Max();
+                double candidate = maxK - 273.15;
+                // Sanity-check: a plausible CPU temp is 0–120 °C
+                if (candidate >= 0 && candidate <= 120)
+                    cpuTempC = Math.Round(candidate, 1);
+            }
         }
 
         // Network delta
@@ -103,7 +118,7 @@ public sealed class PcPerformanceService : IDisposable
 
         return new PcSnapshot(cpuPct, ramUsed, ramTotal, (int)mem.dwMemoryLoad,
                               drives, procCount, uptime,
-                              gpuPct, gpuMemUsed, gpuMemTotal, netBps, diskPct);
+                              gpuPct, gpuMemUsed, gpuMemTotal, netBps, diskPct, cpuTempC);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -116,6 +131,7 @@ public sealed class PcPerformanceService : IDisposable
         PdhAddEnglishCounter(_pdhQuery, @"\GPU Adapter Memory(*)\Dedicated Usage",          IntPtr.Zero, out _cGpuMemUsed);
         PdhAddEnglishCounter(_pdhQuery, @"\GPU Adapter Memory(*)\Dedicated Limit",          IntPtr.Zero, out _cGpuMemLimit);
         PdhAddEnglishCounter(_pdhQuery, @"\PhysicalDisk(_Total)\% Disk Time",               IntPtr.Zero, out _cDiskTime);
+        PdhAddEnglishCounter(_pdhQuery, @"\Thermal Zone Information(*)\Temperature",        IntPtr.Zero, out _cCpuTemp);
 
         PdhCollectQueryData(_pdhQuery); // first collection — rate counters need ≥ 2 samples
         _pdhReady = true;
