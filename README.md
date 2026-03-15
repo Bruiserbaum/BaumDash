@@ -1,8 +1,8 @@
-# BaumDash
+﻿# BaumDash
 
-A personal ultrawide desktop dashboard for Windows. Borderless, dark-themed, always-on-top — built with WinForms and .NET 8.
+A personal ultrawide desktop dashboard for Windows. Borderless, dark-themed, always-on-top â€” built with WinForms and .NET 8.
 
-Designed for a **1920×720 ultrawide monitor**, BaumDash sits at the top or bottom of your screen and gives you a single-glance view of audio, media, calendar, Discord, and system stats — all in one persistent panel.
+Designed for a **1920Ã—720 ultrawide monitor**, BaumDash sits at the top or bottom of your screen and gives you a single-glance view of audio, media, calendar, Discord, and system stats â€” all in one persistent panel.
 
 ![BaumDash screenshot](docs/screenshot.png)
 
@@ -24,19 +24,19 @@ BaumDash is a fixed 4-column panel:
 ## Panels
 
 ### Audio Devices
-- Switch default **input** (microphone) and **output** (speaker) device with ◀ / ▶ arrows
+- Switch default **input** (microphone) and **output** (speaker) device with â—€ / â–¶ arrows
 - **Mic mute** and **Speaker mute** toggle buttons
 - **Master volume** slider
-- **Instant Replay** button — sends the AMD ReLive (`Ctrl+Shift+S`) or NVIDIA ShadowPlay (`Alt+F10`) hotkey depending on your GPU platform setting
+- **Instant Replay** button â€” sends the AMD ReLive (`Ctrl+Shift+S`) or NVIDIA ShadowPlay (`Alt+F10`) hotkey depending on your GPU platform setting
 
 ### App Volume
 - Scrollable per-app volume sliders with live session icons
-- Manual refresh button (↻)
+- Manual refresh button (â†»)
 - Auto-refreshes every 5 seconds
 
 ### Weather (App Volume footer)
 - Current temperature, high/low, wind speed, and condition
-- Powered by [Open-Meteo](https://open-meteo.com/) — no API key required
+- Powered by [Open-Meteo](https://open-meteo.com/) â€” no API key required
 - Updates every 10 minutes
 
 ### Media Controls
@@ -45,7 +45,7 @@ BaumDash is a fixed 4-column panel:
 - Live clock (updates every second)
 - Works with anything SMTC-aware: Spotify, browsers, Windows Media Player, etc.
 
-### Right Panel — Tabs
+### Right Panel â€” Tabs
 
 The right panel contains 8 tabs. Each tab can be shown or hidden from Settings.
 
@@ -57,8 +57,8 @@ The right panel contains 8 tabs. Each tab can be shown or hidden from Settings.
 | **PC Perf** | Real-time CPU usage + temperature, GPU, RAM, disk, network, and per-drive metrics |
 | **Calendar** | Month calendar grid + upcoming events from any Google Calendar or iCal URL |
 | **Home Asst** | Toggle lights and switches, view live sensor readings via Home Assistant |
-| **Apps** | Customisable app launcher grid — add any installed app as a tile |
-| **Status** | Embedded browser (WebView2) showing any URL — useful for status dashboards |
+| **Apps** | Customisable app launcher grid â€” add any installed app as a tile |
+| **Status** | Embedded browser (WebView2) showing any URL â€” useful for status dashboards |
 
 ---
 
@@ -72,26 +72,26 @@ The right panel contains 8 tabs. Each tab can be shown or hidden from Settings.
 
 ### Auto-Updates
 - Checks for updates silently on launch
-- Shows an ⬆ Update button when a new version is available
+- Shows an â¬† Update button when a new version is available
 - Downloads and installs automatically, then restarts
 - **Stable** channel (default) or **Dev** channel for pre-release builds
 
 ### Themes
 - **Dark** (default) and **Light** themes
-- Custom **accent colour** picker — applied to buttons and highlights across all panels
+- Custom **accent colour** picker â€” applied to buttons and highlights across all panels
 - Optional **background image** with mode (stretch / fill / fit / tile / centre) and overlay alpha control
 
 ### Window Management
 - Borderless window with custom title bar drag area
 - Window position and size restored on next launch
-- Layout profile: **Auto**, **1920×720**, or **2560×720**
+- Layout profile: **Auto**, **1920Ã—720**, or **2560Ã—720**
 
 ### Backup & Restore
 - **Export** all settings and API keys to a `.baumdash-backup` file
 - **Import** on a new machine to restore everything instantly
 
 ### Security
-- Discord, ChatGPT, AnythingLLM, and Home Assistant credentials are stored encrypted in `baum-secure.dat` using **Windows DPAPI** — only the current user on this machine can decrypt them
+- Discord, ChatGPT, AnythingLLM, and Home Assistant credentials are stored encrypted in `baum-secure.dat` using **Windows DPAPI** â€” only the current user on this machine can decrypt them
 - Non-sensitive settings (URLs, entity IDs, layout preferences) remain in plain JSON for easy manual editing
 
 ---
@@ -99,7 +99,7 @@ The right panel contains 8 tabs. Each tab can be shown or hidden from Settings.
 ## Requirements
 
 - Windows 10 22621+ (Windows 11 recommended)
-- .NET 8 Runtime (bundled — no separate install needed)
+- .NET 8 Runtime (bundled â€” no separate install needed)
 - [WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/) (pre-installed on Windows 11; required for the Status tab)
 
 ---
@@ -108,24 +108,24 @@ The right panel contains 8 tabs. Each tab can be shown or hidden from Settings.
 
 Download the latest installer from the [Releases](https://github.com/Bruiserbaum/BaumDash/releases) page and run `BaumDash-Setup-x.x.x.exe`. No admin rights required.
 
-Config template files are placed next to the exe on install. Edit them to enable optional integrations, or configure everything from the **Settings** dialog (⚙ button in the bottom-left of the app).
+Config template files are placed next to the exe on install. Edit them to enable optional integrations, or configure everything from the **Settings** dialog (âš™ button in the bottom-left of the app).
 
 ---
 
 ## Configuration
 
-All config lives next to `WinUIAudioMixer.exe`. Use the **Settings** dialog to configure everything — or edit the JSON files directly.
+All config lives next to `WinUIAudioMixer.exe`. Use the **Settings** dialog to configure everything â€” or edit the JSON files directly.
 
 ### Settings Dialog
 
-Open with the **⚙** button. Seven tabs:
+Open with the **âš™** button. Seven tabs:
 
 #### General
 | Setting | Description |
 |---------|-------------|
 | Close to tray | Hide to system tray on close/minimise instead of exiting |
-| GPU Platform | AMD or NVIDIA — controls which hotkey the Instant Replay button sends |
-| Layout Profile | Auto / 1920×720 / 2560×720 — adjusts column widths |
+| GPU Platform | AMD or NVIDIA â€” controls which hotkey the Instant Replay button sends |
+| Layout Profile | Auto / 1920Ã—720 / 2560Ã—720 â€” adjusts column widths |
 | Theme | Dark or Light |
 | Accent Colour | Custom highlight colour applied across all panels |
 | Release Channel | Stable (recommended) or Dev (pre-release builds) |
@@ -134,7 +134,7 @@ Open with the **⚙** button. Seven tabs:
 | Discord Panel Tabs | Show/hide any of the 8 right-panel tabs |
 
 #### Weather
-Configure location (latitude/longitude) and unit (°F / °C).
+Configure location (latitude/longitude) and unit (Â°F / Â°C).
 
 #### Discord
 Enter your Discord **Client ID** and **Client Secret** from [discord.com/developers](https://discord.com/developers/applications). A reauthorise button is available if the stored token expires.
@@ -149,7 +149,7 @@ Enter your OpenAI **API key** and preferred **model** (e.g. `gpt-4o`).
 Enter your Home Assistant **server URL** and a **long-lived access token**. Add lights, switches, and sensors as `entity_id = Display Name` entries (one per line).
 
 #### Calendar
-Add one or more calendars with a **name** and **iCal URL**. Google Calendar iCal URLs are found under Settings → Integrate calendar → *Secret address in iCal format*.
+Add one or more calendars with a **name** and **iCal URL**. Google Calendar iCal URLs are found under Settings â†’ Integrate calendar â†’ *Secret address in iCal format*.
 
 ---
 
@@ -164,7 +164,7 @@ Add one or more calendars with a **name** and **iCal URL**. Google Calendar iCal
 | `anythingllm-config.json` | Server URL and workspace slug |
 | `gcalendar-config.json` | Calendar names and iCal URLs |
 | `app-shortcuts.json` | App launcher tile list |
-| `baum-secure.dat` | Encrypted credentials (DPAPI — do not share) |
+| `baum-secure.dat` | Encrypted credentials (DPAPI â€” do not share) |
 | `window-state.json` | Last window position and size |
 
 ### Home Assistant (`ha-config.json`)
@@ -247,24 +247,38 @@ build-installer.bat
 
 ```
 WinUIAudioMixer/
-├── Controls/           # Owner-drawn WinForms panels (one per dashboard section)
-├── Services/           # Audio, Discord, HA, Calendar, Weather, AI, updates, etc.
-├── Interop/            # Raw COM interop for Core Audio APIs
-├── Models/             # Config record types
-├── AppTheme.cs         # Single source of truth for all colours and fonts
-└── MainForm.cs         # Root 4-column TableLayoutPanel host
+â”œâ”€â”€ Controls/           # Owner-drawn WinForms panels (one per dashboard section)
+â”œâ”€â”€ Services/           # Audio, Discord, HA, Calendar, Weather, AI, updates, etc.
+â”œâ”€â”€ Interop/            # Raw COM interop for Core Audio APIs
+â”œâ”€â”€ Models/             # Config record types
+â”œâ”€â”€ AppTheme.cs         # Single source of truth for all colours and fonts
+â””â”€â”€ MainForm.cs         # Root 4-column TableLayoutPanel host
 ```
 
-All controls are entirely owner-drawn with GDI+ — no external UI libraries. Audio interfaces run on the WinForms STA thread; all change events are marshalled back to the UI via `SynchronizationContext`. SMTC (media session) is initialised asynchronously on `Form.Load`. Credentials are encrypted at rest via Windows DPAPI.
+All controls are entirely owner-drawn with GDI+ â€” no external UI libraries. Audio interfaces run on the WinForms STA thread; all change events are marshalled back to the UI via `SynchronizationContext`. SMTC (media session) is initialised asynchronously on `Form.Load`. Credentials are encrypted at rest via Windows DPAPI.
 
 ---
 
 ## Related Projects
 
-- [BaumLaunch](https://github.com/Bruiserbaum/BaumLaunch) — WinGet-based GUI package manager with system tray integration and setup profiles
+- [BaumLaunch](https://github.com/Bruiserbaum/BaumLaunch) â€” WinGet-based GUI package manager with system tray integration and setup profiles
 
 ---
 
 ## License
 
 Personal use. Not currently open for contributions.
+
+---
+
+## License and Project Status
+
+This repository is a personal project shared publicly for learning, reference, portfolio, and experimentation purposes.
+
+Development may include AI-assisted ideation, drafting, refactoring, or code generation. All code and content published here were reviewed, selected, and curated before release.
+
+This project is licensed under the Apache License 2.0. See the LICENSE file for details.
+
+Unless explicitly stated otherwise, this repository is provided as-is, without warranty, support obligation, or guarantee of suitability for production use.
+
+Any third-party libraries, assets, icons, fonts, models, or dependencies used by this project remain subject to their own licenses and terms.
