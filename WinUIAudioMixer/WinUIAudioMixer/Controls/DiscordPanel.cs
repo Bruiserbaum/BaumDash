@@ -305,6 +305,11 @@ public sealed class DiscordPanel : UserControl
         if (configured)
             HandleCreated += (_, _) => BeginInvoke(OnConnectClick, this, EventArgs.Empty);
 
+        // Pre-initialize the WebView2 as soon as the panel has a window handle
+        // so it's ready before the user ever clicks the Status tab.
+        if (!string.IsNullOrWhiteSpace(_statusUrl))
+            HandleCreated += (_, _) => BeginInvoke(async () => await EnsureWebView2InitAsync());
+
         _discord.ConnectionStateChanged += OnConnectionChanged;
         _discord.VoiceStateChanged      += OnVoiceStateChanged;
         _discord.MicMuteChanged         += OnMicMuteChanged;
@@ -498,9 +503,7 @@ public sealed class DiscordPanel : UserControl
         }
 
         if (status && !string.IsNullOrWhiteSpace(_statusUrl))
-            // BeginInvoke defers until after the current message dispatch so that
-            // _statusPanel's handle is fully created before EnsureCoreWebView2Async runs.
-            BeginInvoke(async () => await NavigateStatusAsync(_statusUrl, reload: true));
+            BeginInvoke(async () => await NavigateStatusAsync(_statusUrl, forceReload: true));
 
         Invalidate();
     }
@@ -509,33 +512,77 @@ public sealed class DiscordPanel : UserControl
     public void SetStatusUrl(string url)
     {
         _statusUrl = url ?? "";
-        if (!string.IsNullOrWhiteSpace(_statusUrl) && _activeTab == ActiveTab.Status)
-            BeginInvoke(async () => await NavigateStatusAsync(_statusUrl, reload: false));
+        if (string.IsNullOrWhiteSpace(_statusUrl)) return;
+
+        // Navigate immediately if the Status tab is already showing,
+        // otherwise pre-initialize the WebView2 in the background so it's
+        // ready by the time the user clicks the tab.
+        BeginInvoke(async () =>
+        {
+            if (_activeTab == ActiveTab.Status)
+                await NavigateStatusAsync(_statusUrl, forceReload: false);
+            else
+                await EnsureWebView2InitAsync();
+        });
     }
 
-    private async Task NavigateStatusAsync(string url, bool reload)
+    private async Task EnsureWebView2InitAsync()
     {
         try
         {
+            if (_statusWebView.CoreWebView2 != null) return;
+            if (!_statusWebView.IsHandleCreated) return;
+
+            await _statusWebView.EnsureCoreWebView2Async(null);
+
+            if (_statusWebView.CoreWebView2 != null)
+                _statusWebView.CoreWebView2.ServerCertificateErrorDetected += (_, e) =>
+                    e.Action = Microsoft.Web.WebView2.Core.CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
+        }
+        catch (Exception ex)
+        {
+            Services.CrashLogger.Error("WebView2 pre-init failed", ex);
+        }
+    }
+
+    private async Task NavigateStatusAsync(string url, bool forceReload)
+    {
+        try
+        {
+            if (!_statusWebView.IsHandleCreated)
+            {
+                Services.CrashLogger.Warn($"StatusWebView handle not created — deferring. url={url}");
+                return;
+            }
+
+            // Normalise URL: add https:// if no scheme is present
+            if (!url.Contains("://"))
+                url = "https://" + url;
+
             if (_statusWebView.CoreWebView2 == null)
             {
-                // Use default WebView2 environment — avoids permission/path issues with
-                // custom user-data folders. WebView2 picks its own profile location.
                 await _statusWebView.EnsureCoreWebView2Async(null);
 
-                // Allow self-signed / internal certificates (local/LAN status pages)
+                if (_statusWebView.CoreWebView2 == null)
+                {
+                    Services.CrashLogger.Error("EnsureCoreWebView2Async returned but CoreWebView2 is still null");
+                    return;
+                }
+
                 _statusWebView.CoreWebView2.ServerCertificateErrorDetected += (_, e) =>
                     e.Action = Microsoft.Web.WebView2.Core.CoreWebView2ServerCertificateErrorAction.AlwaysAllow;
             }
 
-            // Use the WinForms Source property — more reliable than CoreWebView2.Navigate
             var uri = new Uri(url);
-            if (reload && _statusWebView.Source == uri)
+            if (forceReload && _statusWebView.Source == uri)
                 _statusWebView.CoreWebView2.Reload();
             else
                 _statusWebView.Source = uri;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Services.CrashLogger.Error($"NavigateStatusAsync failed. url={url}", ex);
+        }
     }
 
     private async Task ShowReadyWithWorkspacesAsync()

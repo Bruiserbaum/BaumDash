@@ -1,0 +1,9 @@
+{
+  "url": "https://your-ha.ui.nabu.casa",
+  "lights": [
+    { "id": "light.living_room", "name": "Room Light" }
+  ],
+  "sensors": [
+    { "id": "sensor.living_room_temperature", "name": "Room Temp" }
+  ]
+}
