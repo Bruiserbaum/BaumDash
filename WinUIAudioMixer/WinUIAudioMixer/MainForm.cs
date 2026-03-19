@@ -729,8 +729,7 @@ public sealed class MainForm : Form
         try
         {
             using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKey, writable: true)!;
-            if (key.GetValue("BaumDash") == null)
-                key.SetValue("BaumDash", $"\"{Application.ExecutablePath}\"");
+            key.SetValue("BaumDash", $"\"{Application.ExecutablePath}\"");
         }
         catch { }
     }

@@ -51,6 +51,8 @@ public sealed class DiscordPanel : UserControl
     private Panel? _haSwitchesSep;
     private System.Windows.Forms.Timer?                  _haTimer;
     private bool                                         _haConnected;
+    private FlowLayoutPanel?                             _haLightsFlow;
+    private FlowLayoutPanel?                             _haSwitchesFlow;
 
     // Discord controls
     private readonly Button      _connectButton;
@@ -1236,9 +1238,20 @@ public sealed class DiscordPanel : UserControl
             y += 9;
         }
 
+        _haLightsFlow = new FlowLayoutPanel
+        {
+            BackColor    = Color.Transparent,
+            WrapContents = true,
+            AutoSize     = true,
+            Margin       = new Padding(0),
+            Padding      = new Padding(0),
+        };
+        _haLightsFlow.SetBounds(x, y, w, 1);
+        _haPanel.Controls.Add(_haLightsFlow);
+
         foreach (var light in _haSvc.Config.Lights)
         {
-            var btn = MakeHaButton($"💡  {light.Name.ToUpper()}");
+            var btn = MakeHaSquareButton($"💡\n{light.Name}");
             var eid = light.Id;
             btn.Click += async (_, _) =>
             {
@@ -1250,13 +1263,10 @@ public sealed class DiscordPanel : UserControl
                 }
                 catch { }
             };
-            btn.SetBounds(x, y, w, 36);
             _haLightButtons.Add((btn, eid));
-            _haPanel.Controls.Add(btn);
-            y += 44;
+            _haLightsFlow.Controls.Add(btn);
         }
-
-        if (_haLightButtons.Count > 0) y += 12;
+        y += 96 + 12; // initial estimate; LayoutHaPanel corrects this
 
         if (_haSvc.Config.Switches.Count > 0)
         {
@@ -1270,9 +1280,20 @@ public sealed class DiscordPanel : UserControl
             y += 9;
         }
 
+        _haSwitchesFlow = new FlowLayoutPanel
+        {
+            BackColor    = Color.Transparent,
+            WrapContents = true,
+            AutoSize     = true,
+            Margin       = new Padding(0),
+            Padding      = new Padding(0),
+        };
+        _haSwitchesFlow.SetBounds(x, y, w, 1);
+        _haPanel.Controls.Add(_haSwitchesFlow);
+
         foreach (var sw in _haSvc.Config.Switches)
         {
-            var btn = MakeHaButton($"🔌  {sw.Name.ToUpper()}");
+            var btn = MakeHaSquareButton($"🔌\n{sw.Name}");
             var eid = sw.Id;
             btn.Click += async (_, _) =>
             {
@@ -1284,10 +1305,8 @@ public sealed class DiscordPanel : UserControl
                 }
                 catch { }
             };
-            btn.SetBounds(x, y, w, 36);
             _haSwitchButtons.Add((btn, eid));
-            _haPanel.Controls.Add(btn);
-            y += 44;
+            _haSwitchesFlow.Controls.Add(btn);
         }
 
         _haPanel.Resize += (_, _) => LayoutHaPanel();
@@ -1315,22 +1334,23 @@ public sealed class DiscordPanel : UserControl
             _haLightsHeader.SetBounds(x, y, w, 18); y += 22;
             _haLightsSep?.SetBounds(x, y, w, 1);    y += 9;
         }
-        foreach (var (btn, _) in _haLightButtons)
+        if (_haLightsFlow != null)
         {
-            btn.SetBounds(x, y, w, 36);
-            y += 44;
+            var fh = _haLightsFlow.GetPreferredSize(new Size(w, 0)).Height;
+            _haLightsFlow.SetBounds(x, y, w, Math.Max(fh, 1));
+            y += fh + 12;
         }
-        if (_haLightButtons.Count > 0) y += 12;
 
         if (_haSwitchesHeader != null)
         {
             _haSwitchesHeader.SetBounds(x, y, w, 18); y += 22;
             _haSwitchesSep?.SetBounds(x, y, w, 1);    y += 9;
         }
-        foreach (var (btn, _) in _haSwitchButtons)
+        if (_haSwitchesFlow != null)
         {
-            btn.SetBounds(x, y, w, 36);
-            y += 44;
+            var fh = _haSwitchesFlow.GetPreferredSize(new Size(w, 0)).Height;
+            _haSwitchesFlow.SetBounds(x, y, w, Math.Max(fh, 1));
+            y += fh;
         }
     }
 
@@ -1408,6 +1428,20 @@ public sealed class DiscordPanel : UserControl
         ForeColor = Color.White,
         FlatStyle = FlatStyle.Flat,
         Cursor    = Cursors.Hand,
+        FlatAppearance = { BorderSize = 0 },
+    };
+
+    private static Button MakeHaSquareButton(string text) => new()
+    {
+        Text      = text,
+        Font      = AppTheme.FontSmall,
+        BackColor = AppTheme.BgCard,
+        ForeColor = Color.White,
+        FlatStyle = FlatStyle.Flat,
+        Cursor    = Cursors.Hand,
+        Size      = new Size(84, 84),
+        TextAlign = ContentAlignment.MiddleCenter,
+        Margin    = new Padding(4),
         FlatAppearance = { BorderSize = 0 },
     };
 
