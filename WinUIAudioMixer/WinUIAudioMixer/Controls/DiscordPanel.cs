@@ -1439,7 +1439,7 @@ public sealed class DiscordPanel : UserControl
         ForeColor = Color.White,
         FlatStyle = FlatStyle.Flat,
         Cursor    = Cursors.Hand,
-        Size      = new Size(84, 84),
+        Size      = new Size(168, 84),
         TextAlign = ContentAlignment.MiddleCenter,
         Margin    = new Padding(4),
         FlatAppearance = { BorderSize = 0 },
