@@ -18,6 +18,7 @@ public sealed class SettingsDialog : Form
     private readonly TextBox _gptKey, _gptModel;
 
     private readonly TextBox _haUrl, _haToken, _haLights, _haSensors, _haSwitches;
+    private TextBox? _haThresholds;
 
     private Panel? _calEntriesContainer;
     private readonly List<(TextBox Name, TextBox Url)> _calEntries = new();
@@ -257,6 +258,7 @@ public sealed class SettingsDialog : Form
         (_aiUrl, _aiKey, _aiWorkspace) = BuildAiPanel(_tabPanels[3]);
         (_gptKey, _gptModel) = BuildGptPanel(_tabPanels[4]);
         (_haUrl, _haToken, _haLights, _haSensors, _haSwitches) = BuildHaPanel(_tabPanels[5]);
+        // _haThresholds stored inside BuildHaPanel via instance field
         BuildCalendarPanel(_tabPanels[6]);
 
         // ── Separator lines ───────────────────────────────────────────────────
@@ -651,7 +653,7 @@ public sealed class SettingsDialog : Form
         return (key, model);
     }
 
-    private static (TextBox url, TextBox token, TextBox lights, TextBox sensors, TextBox switches) BuildHaPanel(Panel p)
+    private (TextBox url, TextBox token, TextBox lights, TextBox sensors, TextBox switches) BuildHaPanel(Panel p)
     {
         int y = 16;
         AddSectionLabel(p, "SERVER URL", ref y);
@@ -671,6 +673,11 @@ public sealed class SettingsDialog : Form
 
         AddSectionLabel(p, "SENSORS  (entity_id = Display Name, one per line)", ref y);
         var sensors = AddField(p, ref y, multiline: true, height: 56);
+        y += 4;
+
+        AddSectionLabel(p, "SENSOR COLOUR RANGES  (name_contains: min, max  — one per line)", ref y);
+        AddHint(p, "e.g.  Temp: 55, 72   |   Humidity: 40, 55   |   Ice Bath: , 50   (blank = no limit)", ref y);
+        _haThresholds = AddField(p, ref y, multiline: true, height: 56);
 
         return (url, token, lights, sensors, switches);
     }
@@ -1370,6 +1377,13 @@ public sealed class SettingsDialog : Form
                     _haLights  .Text = string.Join("\r\n", cfg.Lights  .Select(e => $"{e.Id} = {e.Name}"));
                     _haSwitches.Text = string.Join("\r\n", cfg.Switches.Select(e => $"{e.Id} = {e.Name}"));
                     _haSensors .Text = string.Join("\r\n", cfg.Sensors .Select(e => $"{e.Id} = {e.Name}"));
+                    if (_haThresholds != null)
+                        _haThresholds.Text = string.Join("\r\n", cfg.SensorThresholds.Select(t =>
+                        {
+                            var min = t.GreenMin.HasValue ? t.GreenMin.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+                            var max = t.GreenMax.HasValue ? t.GreenMax.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) : "";
+                            return $"{t.NameContains}: {min}, {max}";
+                        }));
                 }
             }
             _haToken.Text = secure.HaToken;
@@ -1556,11 +1570,12 @@ public sealed class SettingsDialog : Form
             File.WriteAllText(Path.Combine(dir, "ha-config.json"),
                 JsonSerializer.Serialize(new HaConfig
                 {
-                    Url      = _haUrl    .Text.Trim(),
-                    Token    = "",   // stored securely
-                    Lights   = ParseEntities(_haLights  .Text),
-                    Switches = ParseEntities(_haSwitches.Text),
-                    Sensors  = ParseEntities(_haSensors .Text),
+                    Url              = _haUrl    .Text.Trim(),
+                    Token            = "",   // stored securely
+                    Lights           = ParseEntities(_haLights  .Text),
+                    Switches         = ParseEntities(_haSwitches.Text),
+                    Sensors          = ParseEntities(_haSensors .Text),
+                    SensorThresholds = ParseThresholds(_haThresholds?.Text ?? ""),
                 }, opts));
 
             // Weather
@@ -1949,6 +1964,36 @@ public sealed class SettingsDialog : Form
             {
                 result.Add(new HaEntity { Id = line, Name = line });
             }
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// Parses lines of the form "name_contains: min, max" into threshold rules.
+    /// Either min or max may be blank (no limit on that side).
+    /// </summary>
+    private static List<HaSensorThreshold> ParseThresholds(string text)
+    {
+        var result = new List<HaSensorThreshold>();
+        foreach (var raw in text.Split('\n'))
+        {
+            var line = raw.Trim().TrimEnd('\r');
+            if (string.IsNullOrEmpty(line)) continue;
+            var colon = line.IndexOf(':');
+            if (colon <= 0) continue;
+            var nameContains = line[..colon].Trim();
+            if (string.IsNullOrEmpty(nameContains)) continue;
+            var parts = line[(colon + 1)..].Split(',');
+            double? greenMin = null, greenMax = null;
+            if (parts.Length >= 1 && double.TryParse(parts[0].Trim(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double mn))
+                greenMin = mn;
+            if (parts.Length >= 2 && double.TryParse(parts[1].Trim(),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double mx))
+                greenMax = mx;
+            result.Add(new HaSensorThreshold { NameContains = nameContains, GreenMin = greenMin, GreenMax = greenMax });
         }
         return result;
     }

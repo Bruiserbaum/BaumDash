@@ -1210,7 +1210,7 @@ public sealed class DiscordPanel : UserControl
             var lbl = new Label
             {
                 Text      = $"{sensor.Name}: …",
-                Font      = new Font("Segoe UI", 11f),
+                Font      = new Font("Segoe UI", 13f),
                 ForeColor = AppTheme.TextPrimary,
                 BackColor = Color.Transparent,
                 AutoSize  = false,
@@ -1218,10 +1218,10 @@ public sealed class DiscordPanel : UserControl
                 TextAlign = ContentAlignment.MiddleLeft,
                 Tag       = sensor,
             };
-            lbl.SetBounds(x, y, w, 24);
+            lbl.SetBounds(x, y, w, 30);
             _haSensorLabels.Add(lbl);
             _haPanel.Controls.Add(lbl);
-            y += 26;
+            y += 32;
         }
 
         if (_haSensorLabels.Count > 0) y += 12;
@@ -1324,8 +1324,8 @@ public sealed class DiscordPanel : UserControl
         }
         foreach (var lbl in _haSensorLabels)
         {
-            lbl.SetBounds(x, y, w, 24);
-            y += 26;
+            lbl.SetBounds(x, y, w, 30);
+            y += 32;
         }
         if (_haSensorLabels.Count > 0) y += 12;
 
@@ -1371,13 +1371,14 @@ public sealed class DiscordPanel : UserControl
 
         for (int i = 0; i < _haSvc.Config.Sensors.Count && i < _haSensorLabels.Count; i++)
         {
-            var (state, unit) = await _haSvc.GetSensorAsync(_haSvc.Config.Sensors[i].Id);
+            var sensor        = _haSvc.Config.Sensors[i];
+            var (state, unit) = await _haSvc.GetSensorAsync(sensor.Id);
             if (state != "?") anySuccess = true;
-            var name = _haSvc.Config.Sensors[i].Name;
-            var text = state == "?" ? $"{name}: –" : $"{name}: {state}{unit}";
-            var lbl  = _haSensorLabels[i];
-            if (lbl.InvokeRequired) lbl.BeginInvoke(() => lbl.Text = text);
-            else                    lbl.Text = text;
+            var text  = state == "?" ? $"{sensor.Name}: –" : $"{sensor.Name}: {state}{unit}";
+            var color = GetSensorColour(sensor.Name, state, _haSvc.Config.SensorThresholds);
+            var lbl   = _haSensorLabels[i];
+            if (lbl.InvokeRequired) lbl.BeginInvoke(() => { lbl.Text = text; lbl.ForeColor = color; });
+            else                    { lbl.Text = text; lbl.ForeColor = color; }
         }
 
         for (int i = 0; i < _haLightButtons.Count; i++)
@@ -1418,6 +1419,33 @@ public sealed class DiscordPanel : UserControl
         var color = isOn ? AppTheme.Accent : AppTheme.BgCard;
         if (btn.InvokeRequired) btn.BeginInvoke(() => btn.BackColor = color);
         else                    btn.BackColor = color;
+    }
+
+    /// <summary>
+    /// Returns green, red, or the default text colour for a sensor reading.
+    /// Matches the first threshold rule whose NameContains is a case-insensitive
+    /// substring of <paramref name="sensorName"/>.
+    /// </summary>
+    private static Color GetSensorColour(
+        string sensorName,
+        string stateStr,
+        IReadOnlyList<WinUIAudioMixer.Models.HaSensorThreshold> thresholds)
+    {
+        if (thresholds.Count == 0) return AppTheme.TextPrimary;
+        if (!double.TryParse(stateStr,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out double value))
+            return AppTheme.TextPrimary;
+
+        foreach (var t in thresholds)
+        {
+            if (string.IsNullOrEmpty(t.NameContains)) continue;
+            if (!sensorName.Contains(t.NameContains, StringComparison.OrdinalIgnoreCase)) continue;
+            bool aboveMin = !t.GreenMin.HasValue || value >= t.GreenMin.Value;
+            bool belowMax = !t.GreenMax.HasValue || value <= t.GreenMax.Value;
+            return (aboveMin && belowMax) ? AppTheme.Success : AppTheme.Danger;
+        }
+        return AppTheme.TextPrimary;
     }
 
     private static Button MakeHaButton(string text) => new()
