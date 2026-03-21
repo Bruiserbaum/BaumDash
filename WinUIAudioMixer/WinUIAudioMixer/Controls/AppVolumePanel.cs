@@ -17,7 +17,7 @@ public sealed class AppVolumePanel : UserControl
     private readonly System.Windows.Forms.Timer _refreshTimer;
 
     // Weather
-    private const int WeatherH = 188; // height reserved at bottom for weather footer
+    private const int WeatherH = 230; // height reserved at bottom for weather footer
     private System.Windows.Forms.Timer? _weatherTimer;
     private WeatherService?  _weatherSvc;
     private WeatherSnapshot? _weather;
@@ -234,13 +234,15 @@ public sealed class AppVolumePanel : UserControl
             var lblRect = new RectangleF(rightX, wy + 72, rightW, 18);
             g.DrawString("Current Temp", lblFont, mutedBrush, lblRect, lblFmt);
 
-            // ── Bottom: H/L + wind (full width, larger font) ─────────────────
+            // ── Bottom: H/L + wind (full width, doubled font, two lines) ─────
             int bottomY = wy + 98;
             string hiLo = $"H: {_weather.TempHigh:F0}{_weather.TempUnit}   L: {_weather.TempLow:F0}{_weather.TempUnit}";
             string wind  = $"Wind: {_weather.WindSpeed:F0} {_weather.WindUnit}";
-            using var detailFont = new Font("Segoe UI", 14f, FontStyle.Regular, GraphicsUnit.Pixel);
-            var detailRect = new RectangleF(x, bottomY, w, 26);
-            g.DrawString($"{hiLo}     {wind}", detailFont, detailBrush, detailRect, wFmt);
+            using var detailFont = new Font("Segoe UI", 28f, FontStyle.Regular, GraphicsUnit.Pixel);
+            var hiLoRect  = new RectangleF(x, bottomY,      w, 34);
+            var windRect  = new RectangleF(x, bottomY + 36, w, 34);
+            g.DrawString(hiLo, detailFont, detailBrush, hiLoRect,  wFmt);
+            g.DrawString(wind, detailFont, detailBrush, windRect,  wFmt);
         }
         else
         {

@@ -6,6 +6,8 @@ namespace WinUIAudioMixer.Services;
 
 public sealed record DriveSnapshot(string Name, double UsedGb, double TotalGb, int Percent);
 
+public sealed record BtBatteryInfo(string Name, int BatteryPercent);
+
 public sealed record PcSnapshot(
     double                       CpuPercent,
     double                       RamUsedGb,
@@ -22,7 +24,9 @@ public sealed record PcSnapshot(
     /// <summary>CPU temperature in °C, or -1 if unavailable.</summary>
     double                       CpuTempC  = -1,
     /// <summary>GPU temperature in °C, or -1 if unavailable.</summary>
-    double                       GpuTempC  = -1);
+    double                       GpuTempC  = -1,
+    /// <summary>Connected Bluetooth devices with battery levels (-1 = unknown).</summary>
+    IReadOnlyList<BtBatteryInfo> BtDevices = null!);
 
 public sealed class PcPerformanceService : IDisposable
 {
@@ -44,17 +48,30 @@ public sealed class PcPerformanceService : IDisposable
     private bool   _pdhReady;
     private bool   _disposed;
 
-    // ── WMI GPU temperature (updated in background every 5 s) ─────────────────
-    private double _gpuTempC = -1;
-    private System.Threading.Timer? _gpuTempTimer;
+    // ── Background-polled metrics ─────────────────────────────────────────────
+    private double _cpuTempC = -1;   // WMI ACPI thermal zone
+    private double _gpuTempC = -1;   // WMI OHM/LHM
+    private IReadOnlyList<BtBatteryInfo> _btDevices = Array.Empty<BtBatteryInfo>();
+    private System.Threading.Timer? _tempTimer;
+    private System.Threading.Timer? _btTimer;
 
     public PcPerformanceService()
     {
         InitPdh();
-        // Start background GPU-temp polling via WMI (OHM / LHM)
-        _gpuTempTimer = new System.Threading.Timer(
-            _ => _gpuTempC = ReadGpuTempViaWmi(),
+        // CPU + GPU temps via WMI — every 5 s
+        _tempTimer = new System.Threading.Timer(
+            _ => { _cpuTempC = ReadCpuTempViaWmi(); _gpuTempC = ReadGpuTempViaWmi(); },
             null, TimeSpan.Zero, TimeSpan.FromSeconds(5));
+        // Bluetooth battery — every 30 s (slower; involves GATT reads)
+        _btTimer = new System.Threading.Timer(
+            _ => _ = StoreBtBatteriesAsync(),
+            null, TimeSpan.Zero, TimeSpan.FromSeconds(30));
+    }
+
+    private async Task StoreBtBatteriesAsync()
+    {
+        try { _btDevices = await ReadBluetoothBatteriesAsync().ConfigureAwait(false); }
+        catch { }
     }
 
     // ── Snapshot ──────────────────────────────────────────────────────────────
@@ -97,7 +114,7 @@ public sealed class PcPerformanceService : IDisposable
         var uptime = TimeSpan.FromMilliseconds(GetTickCount64());
 
         // GPU util + GPU VRAM + Disk I/O + CPU temp via PDH
-        double gpuPct = 0, gpuMemUsed = 0, gpuMemTotal = 0, diskPct = 0, cpuTempC = -1;
+        double gpuPct = 0, gpuMemUsed = 0, gpuMemTotal = 0, diskPct = 0;
         if (_pdhReady && PdhCollectQueryData(_pdhQuery) == 0)
         {
             var gpuVals = GetCounterArray(_cGpuUtil);
@@ -113,19 +130,7 @@ public sealed class PcPerformanceService : IDisposable
                 (dv.CStatus & 0x80000000u) == 0)
                 diskPct = Math.Clamp(dv.DoubleValue, 0, 100);
 
-            // CPU temperature — Thermal Zone Information counter.
-            // Windows PDH returns the value in tenths-of-Kelvin (decikelvin), e.g.
-            // 3023 = 302.3 K = 29.15 °C.  Detect which unit by checking magnitude.
-            var tempVals = GetCounterArray(_cCpuTemp);
-            if (tempVals.Length > 0)
-            {
-                double maxRaw = tempVals.Max();
-                // Decikelvin values are typically 2700–3700; raw Kelvin 270–370
-                double candidate = maxRaw >= 1000 ? maxRaw / 10.0 - 273.15 : maxRaw - 273.15;
-                // Sanity-check: a plausible CPU temp is 0–120 °C
-                if (candidate >= 0 && candidate <= 120)
-                    cpuTempC = Math.Round(candidate, 1);
-            }
+            // CPU temperature is now read via WMI in the background (_cpuTempC field)
         }
 
         // Network delta
@@ -133,7 +138,8 @@ public sealed class PcPerformanceService : IDisposable
 
         return new PcSnapshot(cpuPct, ramUsed, ramTotal, (int)mem.dwMemoryLoad,
                               drives, procCount, uptime,
-                              gpuPct, gpuMemUsed, gpuMemTotal, netBps, diskPct, cpuTempC, _gpuTempC);
+                              gpuPct, gpuMemUsed, gpuMemTotal, netBps, diskPct,
+                              CpuTempC: _cpuTempC, GpuTempC: _gpuTempC, BtDevices: _btDevices);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -206,9 +212,37 @@ public sealed class PcPerformanceService : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _gpuTempTimer?.Dispose();
-        _gpuTempTimer = null;
+        _tempTimer?.Dispose(); _tempTimer = null;
+        _btTimer?.Dispose();   _btTimer   = null;
         if (_pdhQuery != IntPtr.Zero) { PdhCloseQuery(_pdhQuery); _pdhQuery = IntPtr.Zero; }
+    }
+
+    /// <summary>
+    /// Reads CPU temperature from the ACPI thermal zone WMI class.
+    /// CurrentTemperature is in tenths of Kelvin (e.g. 2981 = 24.95 °C).
+    /// Returns the highest plausible zone temp in °C, or -1 if unavailable.
+    /// </summary>
+    private static double ReadCpuTempViaWmi()
+    {
+        try
+        {
+            var scope   = new System.Management.ManagementScope(@"root\wmi");
+            var query   = new System.Management.ObjectQuery(
+                "SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature");
+            using var searcher = new System.Management.ManagementObjectSearcher(scope, query);
+            double best = -1;
+            foreach (System.Management.ManagementObject obj in searcher.Get())
+            {
+                if (obj["CurrentTemperature"] is uint raw)
+                {
+                    double tempC = raw / 10.0 - 273.15;
+                    if (tempC >= 0 && tempC <= 120 && tempC > best)
+                        best = Math.Round(tempC, 1);
+                }
+            }
+            return best;
+        }
+        catch { return -1; }
     }
 
     /// <summary>
@@ -237,6 +271,73 @@ public sealed class PcPerformanceService : IDisposable
             catch { }
         }
         return -1;
+    }
+
+    /// <summary>
+    /// Enumerates connected Bluetooth devices and reads each one's battery level
+    /// via the standard GATT Battery Service (UUID 0x180F).  Works for most
+    /// modern BLE headphones, mice, and keyboards.  Classic BR/EDR-only devices
+    /// that do not advertise BLE will show BatteryPercent = -1.
+    /// </summary>
+    private static async Task<IReadOnlyList<BtBatteryInfo>> ReadBluetoothBatteriesAsync()
+    {
+        var result = new List<BtBatteryInfo>();
+        try
+        {
+            string selector = Windows.Devices.Bluetooth.BluetoothDevice
+                .GetDeviceSelectorFromConnectionStatus(
+                    Windows.Devices.Bluetooth.BluetoothConnectionStatus.Connected);
+            var devices = await Windows.Devices.Enumeration.DeviceInformation
+                .FindAllAsync(selector).AsTask().ConfigureAwait(false);
+
+            foreach (var di in devices)
+            {
+                try
+                {
+                    using var bt = await Windows.Devices.Bluetooth.BluetoothDevice
+                        .FromIdAsync(di.Id).AsTask().ConfigureAwait(false);
+                    if (bt == null) continue;
+
+                    int pct = -1;
+                    try
+                    {
+                        using var le = await Windows.Devices.Bluetooth.BluetoothLEDevice
+                            .FromBluetoothAddressAsync(bt.BluetoothAddress)
+                            .AsTask().ConfigureAwait(false);
+                        if (le != null)
+                        {
+                            var svcResult = await le.GetGattServicesForUuidAsync(
+                                Windows.Devices.Bluetooth.GenericAttributeProfile.GattServiceUuids.Battery,
+                                Windows.Devices.Bluetooth.BluetoothCacheMode.Cached)
+                                .AsTask().ConfigureAwait(false);
+                            if (svcResult.Status == Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus.Success
+                                && svcResult.Services.Count > 0)
+                            {
+                                using var svc = svcResult.Services[0];
+                                var chars = await svc.GetCharacteristicsForUuidAsync(
+                                    Windows.Devices.Bluetooth.GenericAttributeProfile.GattCharacteristicUuids.BatteryLevel)
+                                    .AsTask().ConfigureAwait(false);
+                                if (chars.Status == Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus.Success
+                                    && chars.Characteristics.Count > 0)
+                                {
+                                    var read = await chars.Characteristics[0]
+                                        .ReadValueAsync(Windows.Devices.Bluetooth.BluetoothCacheMode.Uncached)
+                                        .AsTask().ConfigureAwait(false);
+                                    if (read.Status == Windows.Devices.Bluetooth.GenericAttributeProfile.GattCommunicationStatus.Success)
+                                        pct = Windows.Storage.Streams.DataReader.FromBuffer(read.Value).ReadByte();
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+
+                    result.Add(new BtBatteryInfo(bt.Name, pct));
+                }
+                catch { }
+            }
+        }
+        catch { }
+        return result;
     }
 
     private static long ToLong(FILETIME ft) => (long)((ulong)ft.High << 32 | ft.Low);

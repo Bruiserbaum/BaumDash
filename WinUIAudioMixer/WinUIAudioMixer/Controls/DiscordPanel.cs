@@ -86,6 +86,10 @@ public sealed class DiscordPanel : UserControl
     private readonly PcPerformanceService _pcSvc    = new();
     private System.Windows.Forms.Timer?   _pcTimer;
     private readonly List<PerfMeter>      _pcMeters = new();
+    private readonly List<PerfMeter>      _btMeters = new();
+    private Label?                        _btHeader;
+    private Panel?                        _btSep;
+    private int                           _lastBtCount = -1;
     private Label?                        _pcInfoLabel;
 
     // Google Calendar panel
@@ -1075,7 +1079,29 @@ public sealed class DiscordPanel : UserControl
             Text      = FormatPcInfo(snap),
         };
 
+        // ── Bluetooth battery section ──────────────────────────────────────
+        _btMeters.Clear();
+        _btHeader = null;
+        _btSep    = null;
+        _lastBtCount = snap.BtDevices?.Count ?? 0;
+
+        if (snap.BtDevices != null && snap.BtDevices.Count > 0)
+        {
+            _btHeader = MakeHaSectionLabel("BLUETOOTH");
+            _btSep    = new Panel { BackColor = AppTheme.Border };
+            foreach (var bt in snap.BtDevices)
+            {
+                var bm = new PerfMeter($"BT  {bt.Name}", GetBatteryColor(bt.BatteryPercent));
+                bm.Update(Math.Max(bt.BatteryPercent, 0),
+                           bt.BatteryPercent >= 0 ? $"{bt.BatteryPercent}%" : "N/A");
+                _btMeters.Add(bm);
+            }
+        }
+
         foreach (var m in _pcMeters) _pcPanel.Controls.Add(m);
+        if (_btHeader != null) _pcPanel.Controls.Add(_btHeader);
+        if (_btSep    != null) _pcPanel.Controls.Add(_btSep);
+        foreach (var m in _btMeters) _pcPanel.Controls.Add(m);
         _pcPanel.Controls.Add(_pcInfoLabel);
         LayoutPcPanel();
     }
@@ -1084,6 +1110,14 @@ public sealed class DiscordPanel : UserControl
     {
         if (_pcMeters.Count == 0) return;
         var snap = _pcSvc.GetSnapshot();
+
+        // Rebuild everything if BT device count changed
+        int btCount = snap.BtDevices?.Count ?? 0;
+        if (btCount != _lastBtCount)
+        {
+            BuildPcControls(snap);
+            return;
+        }
 
         // [0] CPU
         _pcMeters[0].BarColor = GetBarColor(snap.CpuPercent);
@@ -1133,6 +1167,18 @@ public sealed class DiscordPanel : UserControl
 
         if (_pcInfoLabel != null)
             _pcInfoLabel.Text = FormatPcInfo(snap);
+
+        // BT battery
+        if (snap.BtDevices != null)
+        {
+            for (int i = 0; i < snap.BtDevices.Count && i < _btMeters.Count; i++)
+            {
+                var bt = snap.BtDevices[i];
+                _btMeters[i].BarColor = GetBatteryColor(bt.BatteryPercent);
+                _btMeters[i].Update(Math.Max(bt.BatteryPercent, 0),
+                                    bt.BatteryPercent >= 0 ? $"{bt.BatteryPercent}%" : "N/A");
+            }
+        }
     }
 
     private void LayoutPcPanel()
@@ -1145,12 +1191,29 @@ public sealed class DiscordPanel : UserControl
             m.SetBounds(x, y, cw, m.Height);
             y += m.Height + 4;
         }
+        if (_btMeters.Count > 0)
+        {
+            y += 8;
+            _btHeader?.SetBounds(x, y, cw, 18); y += 22;
+            _btSep   ?.SetBounds(x, y, cw, 1);  y += 8;
+            foreach (var m in _btMeters)
+            {
+                m.SetBounds(x, y, cw, m.Height);
+                y += m.Height + 4;
+            }
+        }
         _pcInfoLabel?.SetBounds(x, y + 8, cw, 40);
     }
 
     private static Color GetBarColor(double pct) =>
         pct >= 90 ? AppTheme.Danger  :
         pct >= 70 ? AppTheme.Warning :
+        AppTheme.Success;
+
+    private static Color GetBatteryColor(int pct) =>
+        pct < 0  ? AppTheme.TextMuted :
+        pct <= 20 ? AppTheme.Danger   :
+        pct <= 40 ? AppTheme.Warning  :
         AppTheme.Success;
 
     private static string FormatCpuLabel(PcSnapshot snap)

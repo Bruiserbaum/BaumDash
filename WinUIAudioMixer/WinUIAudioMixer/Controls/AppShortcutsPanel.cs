@@ -127,7 +127,7 @@ file sealed class ShortcutTile : Control
 {
     private readonly string _name;
     private readonly string _exePath;
-    private Icon?   _icon;
+    private Bitmap? _bmp;   // pre-converted so DrawImage handles alpha correctly
     private bool    _hover;
 
     public event Action? Launched;
@@ -143,7 +143,14 @@ file sealed class ShortcutTile : Control
                  ControlStyles.AllPaintingInWmPaint  |
                  ControlStyles.UserPaint, true);
 
-        try { if (File.Exists(exePath)) _icon = Icon.ExtractAssociatedIcon(exePath); }
+        try
+        {
+            if (File.Exists(exePath))
+            {
+                using var icon = Icon.ExtractAssociatedIcon(exePath);
+                _bmp = icon?.ToBitmap();   // ToBitmap preserves alpha; DrawImage composites correctly
+            }
+        }
         catch { }
 
         var menu = new ContextMenuStrip();
@@ -172,8 +179,11 @@ file sealed class ShortcutTile : Control
         using var cardBrush = new SolidBrush(AppTheme.BgCard);
         g.FillRoundedRectangle(cardBrush, 4, 4, Width - 8, Width - 8, 10);
 
-        if (_icon != null)
-            g.DrawIcon(_icon, new Rectangle(ix, iy, iconSize, iconSize));
+        if (_bmp != null)
+        {
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(_bmp, new Rectangle(ix, iy, iconSize, iconSize));
+        }
         else
         {
             using var ph = new SolidBrush(AppTheme.BgCard);
@@ -198,7 +208,7 @@ file sealed class ShortcutTile : Control
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing) _icon?.Dispose();
+        if (disposing) _bmp?.Dispose();
         base.Dispose(disposing);
     }
 }
