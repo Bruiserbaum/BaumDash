@@ -166,9 +166,12 @@ file sealed class ShortcutTile : Control
             g.FillRoundedRectangle(hoverBrush, 2, 2, Width - 4, Height - 4, 8);
         }
 
-        // Icon (48×48 centred in top portion)
+        // Card background behind icon area (theme-aware: dark in dark mode)
         const int iconSize = 40;
         int ix = (Width - iconSize) / 2, iy = 6;
+        using var cardBrush = new SolidBrush(AppTheme.BgCard);
+        g.FillRoundedRectangle(cardBrush, 4, 4, Width - 8, Width - 8, 10);
+
         if (_icon != null)
             g.DrawIcon(_icon, new Rectangle(ix, iy, iconSize, iconSize));
         else

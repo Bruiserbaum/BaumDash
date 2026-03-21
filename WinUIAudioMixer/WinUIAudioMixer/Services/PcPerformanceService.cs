@@ -20,7 +20,9 @@ public sealed record PcSnapshot(
     double                       NetBytesPerSec,
     double                       DiskActivityPercent,
     /// <summary>CPU temperature in °C, or -1 if unavailable.</summary>
-    double                       CpuTempC = -1);
+    double                       CpuTempC  = -1,
+    /// <summary>GPU temperature in °C, or -1 if unavailable.</summary>
+    double                       GpuTempC  = -1);
 
 public sealed class PcPerformanceService : IDisposable
 {
@@ -42,7 +44,18 @@ public sealed class PcPerformanceService : IDisposable
     private bool   _pdhReady;
     private bool   _disposed;
 
-    public PcPerformanceService() => InitPdh();
+    // ── WMI GPU temperature (updated in background every 5 s) ─────────────────
+    private double _gpuTempC = -1;
+    private System.Threading.Timer? _gpuTempTimer;
+
+    public PcPerformanceService()
+    {
+        InitPdh();
+        // Start background GPU-temp polling via WMI (OHM / LHM)
+        _gpuTempTimer = new System.Threading.Timer(
+            _ => _gpuTempC = ReadGpuTempViaWmi(),
+            null, TimeSpan.Zero, TimeSpan.FromSeconds(5));
+    }
 
     // ── Snapshot ──────────────────────────────────────────────────────────────
 
@@ -100,13 +113,15 @@ public sealed class PcPerformanceService : IDisposable
                 (dv.CStatus & 0x80000000u) == 0)
                 diskPct = Math.Clamp(dv.DoubleValue, 0, 100);
 
-            // CPU temperature — Thermal Zone Information returns Kelvin values.
-            // Take the highest zone temp (typically the CPU package zone).
+            // CPU temperature — Thermal Zone Information counter.
+            // Windows PDH returns the value in tenths-of-Kelvin (decikelvin), e.g.
+            // 3023 = 302.3 K = 29.15 °C.  Detect which unit by checking magnitude.
             var tempVals = GetCounterArray(_cCpuTemp);
             if (tempVals.Length > 0)
             {
-                double maxK = tempVals.Max();
-                double candidate = maxK - 273.15;
+                double maxRaw = tempVals.Max();
+                // Decikelvin values are typically 2700–3700; raw Kelvin 270–370
+                double candidate = maxRaw >= 1000 ? maxRaw / 10.0 - 273.15 : maxRaw - 273.15;
                 // Sanity-check: a plausible CPU temp is 0–120 °C
                 if (candidate >= 0 && candidate <= 120)
                     cpuTempC = Math.Round(candidate, 1);
@@ -118,7 +133,7 @@ public sealed class PcPerformanceService : IDisposable
 
         return new PcSnapshot(cpuPct, ramUsed, ramTotal, (int)mem.dwMemoryLoad,
                               drives, procCount, uptime,
-                              gpuPct, gpuMemUsed, gpuMemTotal, netBps, diskPct, cpuTempC);
+                              gpuPct, gpuMemUsed, gpuMemTotal, netBps, diskPct, cpuTempC, _gpuTempC);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -191,7 +206,37 @@ public sealed class PcPerformanceService : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _gpuTempTimer?.Dispose();
+        _gpuTempTimer = null;
         if (_pdhQuery != IntPtr.Zero) { PdhCloseQuery(_pdhQuery); _pdhQuery = IntPtr.Zero; }
+    }
+
+    /// <summary>
+    /// Queries OpenHardwareMonitor or LibreHardwareMonitor WMI provider for
+    /// GPU temperature.  Returns the temperature in °C, or -1 if unavailable.
+    /// Requires OHM/LHM to be running with its WMI provider enabled.
+    /// </summary>
+    private static double ReadGpuTempViaWmi()
+    {
+        foreach (var ns in new[] { @"root\OpenHardwareMonitor", @"root\LibreHardwareMonitor" })
+        {
+            try
+            {
+                var scope   = new System.Management.ManagementScope(ns);
+                var query   = new System.Management.ObjectQuery(
+                    "SELECT Name, Value FROM Sensor WHERE SensorType='Temperature'");
+                using var searcher = new System.Management.ManagementObjectSearcher(scope, query);
+                foreach (System.Management.ManagementObject obj in searcher.Get())
+                {
+                    var name = obj["Name"]?.ToString() ?? "";
+                    if (!name.Contains("GPU", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (obj["Value"] is float v && v > 0 && v < 120)
+                        return Math.Round(v, 1);
+                }
+            }
+            catch { }
+        }
+        return -1;
     }
 
     private static long ToLong(FILETIME ft) => (long)((ulong)ft.High << 32 | ft.Low);

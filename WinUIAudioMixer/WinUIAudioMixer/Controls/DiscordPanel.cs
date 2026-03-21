@@ -1035,7 +1035,7 @@ public sealed class DiscordPanel : UserControl
 
         // [2] GPU utilisation
         var gpu = new PerfMeter("GPU", GetBarColor(snap.GpuPercent));
-        gpu.Update(snap.GpuPercent, $"{snap.GpuPercent:F0}%");
+        gpu.Update(snap.GpuPercent, FormatGpuLabel(snap));
         _pcMeters.Add(gpu);
 
         // [3] GPU VRAM
@@ -1097,7 +1097,7 @@ public sealed class DiscordPanel : UserControl
         if (_pcMeters.Count > 2)
         {
             _pcMeters[2].BarColor = GetBarColor(snap.GpuPercent);
-            _pcMeters[2].Update(snap.GpuPercent, $"{snap.GpuPercent:F0}%");
+            _pcMeters[2].Update(snap.GpuPercent, FormatGpuLabel(snap));
         }
 
         // [3] GPU VRAM
@@ -1158,6 +1158,14 @@ public sealed class DiscordPanel : UserControl
         string pct = $"{snap.CpuPercent:F0}%";
         return snap.CpuTempC >= 0
             ? $"{pct}  ·  {snap.CpuTempC:F0}°C"
+            : pct;
+    }
+
+    private static string FormatGpuLabel(PcSnapshot snap)
+    {
+        string pct = $"{snap.GpuPercent:F0}%";
+        return snap.GpuTempC >= 0
+            ? $"{pct}  ·  {snap.GpuTempC:F0}°C"
             : pct;
     }
 
@@ -1437,7 +1445,8 @@ public sealed class DiscordPanel : UserControl
                 System.Globalization.CultureInfo.InvariantCulture, out double value))
             return AppTheme.TextPrimary;
 
-        foreach (var t in thresholds)
+        // Check longest (most specific) NameContains first so "Ice Bath" beats "Temp"
+        foreach (var t in thresholds.OrderByDescending(t => t.NameContains.Length))
         {
             if (string.IsNullOrEmpty(t.NameContains)) continue;
             if (!sensorName.Contains(t.NameContains, StringComparison.OrdinalIgnoreCase)) continue;
