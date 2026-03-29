@@ -131,7 +131,8 @@ public sealed class MainForm : Form
 
     private void InitForm()
     {
-        Text            = "Audio Mixer";
+        Text            = "BaumDash";
+        Icon            = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         FormBorderStyle = FormBorderStyle.None;
         BackColor       = AppTheme.BgDeep;
         MinimumSize     = new Size(1280, 540);

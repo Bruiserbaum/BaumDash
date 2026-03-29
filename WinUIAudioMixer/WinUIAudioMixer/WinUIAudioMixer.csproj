@@ -8,6 +8,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <AssemblyTitle>BaumDash</AssemblyTitle>
+    <Product>BaumDash</Product>
     <Version>2.8.14</Version>
   </PropertyGroup>
 
