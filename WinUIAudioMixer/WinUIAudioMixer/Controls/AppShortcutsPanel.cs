@@ -135,10 +135,11 @@ file sealed class ShortcutTile : Control
 
     public ShortcutTile(string name, string exePath)
     {
-        _name    = name;
-        _exePath = exePath;
-        Size     = new Size(84, 90);
-        Cursor   = Cursors.Hand;
+        _name     = name;
+        _exePath  = exePath;
+        Size      = new Size(84, 90);
+        Cursor    = Cursors.Hand;
+        BackColor = AppTheme.BgPanel;   // prevent system light-gray showing at tile edges
         SetStyle(ControlStyles.OptimizedDoubleBuffer |
                  ControlStyles.AllPaintingInWmPaint  |
                  ControlStyles.UserPaint, true);

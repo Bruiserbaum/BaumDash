@@ -1037,8 +1037,8 @@ public sealed class DiscordPanel : UserControl
         ram.Update(snap.RamPercent, $"{snap.RamUsedGb:F1} / {snap.RamTotalGb:F0} GB");
         _pcMeters.Add(ram);
 
-        // [2] GPU utilisation
-        var gpu = new PerfMeter("GPU", GetBarColor(snap.GpuPercent));
+        // [2] GPU utilisation — label shows model name if known
+        var gpu = new PerfMeter(GpuSectionLabel(snap.GpuName), GetBarColor(snap.GpuPercent));
         gpu.Update(snap.GpuPercent, FormatGpuLabel(snap));
         _pcMeters.Add(gpu);
 
@@ -1230,6 +1230,14 @@ public sealed class DiscordPanel : UserControl
         return snap.GpuTempC >= 0
             ? $"{pct}  ·  {snap.GpuTempC:F0}°C"
             : pct;
+    }
+
+    /// <summary>GPU section label: "GPU" or "GPU  AMD Radeon RX 9070 XT" (truncated at 32 chars).</summary>
+    private static string GpuSectionLabel(string gpuName)
+    {
+        if (string.IsNullOrWhiteSpace(gpuName)) return "GPU";
+        string name = gpuName.Length > 32 ? gpuName[..32].TrimEnd() : gpuName;
+        return $"GPU  {name}";
     }
 
     private static string FormatPcInfo(PcSnapshot snap)
