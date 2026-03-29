@@ -265,12 +265,6 @@ All controls are entirely owner-drawn with GDI+ — no external UI libraries. Au
 
 ---
 
-## License
-
-Personal use. Not currently open for contributions.
-
----
-
 ## License and Project Status
 
 This repository is a personal project shared publicly for learning, reference, portfolio, and experimentation purposes.
