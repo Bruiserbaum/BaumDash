@@ -24,7 +24,7 @@ BaumDash is a fixed 4-column panel:
 ## Panels
 
 ### Audio Devices
-- Switch default **input** (microphone) and **output** (speaker) device with â—€ / ▶ arrows
+- Switch default **input** (microphone) and **output** (speaker) device with ◄ / ▶ arrows
 - **Mic mute** and **Speaker mute** toggle buttons
 - **Master volume** slider
 - **Instant Replay** button — sends the AMD ReLive (`Ctrl+Shift+S`) or NVIDIA ShadowPlay (`Alt+F10`) hotkey depending on your GPU platform setting
@@ -108,7 +108,7 @@ The right panel contains 8 tabs. Each tab can be shown or hidden from Settings.
 
 Download the latest installer from the [Releases](https://github.com/Bruiserbaum/BaumDash/releases) page and run `BaumDash-Setup-x.x.x.exe`. No admin rights required.
 
-Config template files are placed next to the exe on install. Edit them to enable optional integrations, or configure everything from the **Settings** dialog (âš™ button in the bottom-left of the app).
+Config template files are placed next to the exe on install. Edit them to enable optional integrations, or configure everything from the **Settings** dialog (⚙ button in the bottom-left of the app).
 
 ---
 
@@ -118,7 +118,7 @@ All config lives next to `WinUIAudioMixer.exe`. Use the **Settings** dialog to c
 
 ### Settings Dialog
 
-Open with the **âš™** button. Seven tabs:
+Open with the **⚙** button. Seven tabs:
 
 #### General
 | Setting | Description |
@@ -247,12 +247,12 @@ build-installer.bat
 
 ```
 WinUIAudioMixer/
-â”œâ”€â”€ Controls/           # Owner-drawn WinForms panels (one per dashboard section)
-â”œâ”€â”€ Services/           # Audio, Discord, HA, Calendar, Weather, AI, updates, etc.
-â”œâ”€â”€ Interop/            # Raw COM interop for Core Audio APIs
-â”œâ”€â”€ Models/             # Config record types
-â”œâ”€â”€ AppTheme.cs         # Single source of truth for all colours and fonts
-â””â”€â”€ MainForm.cs         # Root 4-column TableLayoutPanel host
+├── Controls/           # Owner-drawn WinForms panels (one per dashboard section)
+├── Services/           # Audio, Discord, HA, Calendar, Weather, AI, updates, etc.
+├── Interop/            # Raw COM interop for Core Audio APIs
+├── Models/             # Config record types
+├── AppTheme.cs         # Single source of truth for all colours and fonts
+└── MainForm.cs         # Root 4-column TableLayoutPanel host
 ```
 
 All controls are entirely owner-drawn with GDI+ — no external UI libraries. Audio interfaces run on the WinForms STA thread; all change events are marshalled back to the UI via `SynchronizationContext`. SMTC (media session) is initialised asynchronously on `Form.Load`. Credentials are encrypted at rest via Windows DPAPI.
