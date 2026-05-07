@@ -252,8 +252,16 @@ public sealed class DiscordService : IDisposable
 
     // ── OAuth authentication ──────────────────────────────────────────────────
 
+    // Store tokens in %AppData%\BaumDash so they survive across different exe locations
+    // (debug builds, published builds, updates) without requiring re-authorization.
+    private static readonly string _tokenDir =
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "BaumDash");
+
     private static readonly string _tokenPath =
-        Path.Combine(AppContext.BaseDirectory, "discord-token.txt");
+        Path.Combine(_tokenDir, "discord-token.txt");
+
+    private static readonly string _refreshTokenPath =
+        Path.Combine(_tokenDir, "discord-refresh-token.txt");
 
     private static readonly string _debugLogPath =
         Path.Combine(AppContext.BaseDirectory, "discord-debug.log");
@@ -264,7 +272,7 @@ public sealed class DiscordService : IDisposable
         log.AppendLine($"[{DateTime.Now:HH:mm:ss}] AuthenticateAsync started. BaseDir={AppContext.BaseDirectory}");
         try
         {
-            // 1. Try a previously saved token
+            // 1. Try a previously saved access token
             log.AppendLine($"  TokenPath exists: {File.Exists(_tokenPath)}");
             if (File.Exists(_tokenPath))
             {
@@ -277,7 +285,6 @@ public sealed class DiscordService : IDisposable
                     log.AppendLine($"  AUTHENTICATE(saved) response: {authData?.ToJsonString() ?? "null"}");
                     if (authData?["access_token"] != null)
                     {
-                        // Grab user ID from auth response as fallback if READY event didn't supply it
                         _currentUserId ??= authData?["user"]?["id"]?.GetValue<string>();
                         log.AppendLine($"  Saved token still valid. CurrentUserId={_currentUserId ?? "null"}");
                         return;
@@ -286,7 +293,7 @@ public sealed class DiscordService : IDisposable
                 }
             }
 
-            // 2. No valid token — need client secret to do the AUTHORIZE flow
+            // 2. Need client secret for refresh or full AUTHORIZE flow
             var secret = LoadClientSecret();
             log.AppendLine($"  Client secret source: " +
                            (!string.IsNullOrEmpty(SecureStorage.Load().DiscordClientSecret)
@@ -299,9 +306,39 @@ public sealed class DiscordService : IDisposable
                 log.AppendLine("  ERROR: No client secret found. Aborting.");
                 return;
             }
+
+            // 2b. Try the saved refresh token — silently gets a new access token without a popup
+            log.AppendLine($"  RefreshTokenPath exists: {File.Exists(_refreshTokenPath)}");
+            if (File.Exists(_refreshTokenPath))
+            {
+                var savedRefresh = File.ReadAllText(_refreshTokenPath).Trim();
+                if (!string.IsNullOrEmpty(savedRefresh))
+                {
+                    log.AppendLine("  Trying refresh token...");
+                    var (newAccess, newRefresh) = await TryRefreshTokenAsync(savedRefresh, secret, log);
+                    if (!string.IsNullOrEmpty(newAccess))
+                    {
+                        var refreshAuth = await SendCommandAsync("AUTHENTICATE",
+                            new JsonObject { ["access_token"] = newAccess });
+                        log.AppendLine($"  AUTHENTICATE(refresh) response: {refreshAuth?.ToJsonString() ?? "null"}");
+                        if (refreshAuth?["access_token"] != null)
+                        {
+                            _currentUserId ??= refreshAuth?["user"]?["id"]?.GetValue<string>();
+                            Directory.CreateDirectory(_tokenDir);
+                            File.WriteAllText(_tokenPath, newAccess);
+                            if (!string.IsNullOrEmpty(newRefresh))
+                                File.WriteAllText(_refreshTokenPath, newRefresh);
+                            log.AppendLine("  Refresh token worked. Tokens updated.");
+                            return;
+                        }
+                    }
+                    log.AppendLine("  Refresh token failed or expired.");
+                }
+            }
+
             log.AppendLine($"  Client secret loaded ({secret.Length} chars).");
 
-            // 3. Send AUTHORIZE — Discord shows a popup; user has 60 s to click Authorize
+            // Send AUTHORIZE — Discord shows a popup; user has 60 s to click Authorize
             // Note: redirect_uri must NOT be sent for the local RPC flow (Discord error 5000)
             log.AppendLine("  Sending AUTHORIZE (waiting up to 60 s for user to click Discord popup)...");
             var authorizeData = await SendCommandAsync("AUTHORIZE", new JsonObject
@@ -327,9 +364,9 @@ public sealed class DiscordService : IDisposable
             }
             log.AppendLine($"  Auth code received ({code.Length} chars).");
 
-            // 4. Exchange code for access token
+            // 4. Exchange code for access + refresh tokens
             log.AppendLine("  Exchanging code for access token...");
-            var token = await ExchangeCodeAsync(code, secret, log);
+            var (token, refreshToken) = await ExchangeCodeAsync(code, secret, log);
             if (string.IsNullOrEmpty(token))
             {
                 log.AppendLine("  ERROR: Token exchange failed. Aborting.");
@@ -343,9 +380,12 @@ public sealed class DiscordService : IDisposable
             log.AppendLine($"  AUTHENTICATE(new) response: {finalAuth?.ToJsonString() ?? "null"}");
             _currentUserId ??= finalAuth?["user"]?["id"]?.GetValue<string>();
 
-            // 6. Save token so future sessions skip the popup
+            // 6. Save access + refresh tokens so future sessions skip the popup
+            Directory.CreateDirectory(_tokenDir);
             File.WriteAllText(_tokenPath, token);
-            log.AppendLine("  Token saved. Auth complete.");
+            if (!string.IsNullOrEmpty(refreshToken))
+                File.WriteAllText(_refreshTokenPath, refreshToken);
+            log.AppendLine($"  Tokens saved to {_tokenDir}. Auth complete.");
         }
         catch (Exception ex)
         {
@@ -357,7 +397,7 @@ public sealed class DiscordService : IDisposable
         }
     }
 
-    private async Task<string?> ExchangeCodeAsync(string code, string clientSecret, StringBuilder? log = null)
+    private async Task<(string? accessToken, string? refreshToken)> ExchangeCodeAsync(string code, string clientSecret, StringBuilder? log = null)
     {
         try
         {
@@ -373,11 +413,37 @@ public sealed class DiscordService : IDisposable
             var resp = await http.PostAsync("https://discord.com/api/v10/oauth2/token", body);
             var json = await resp.Content.ReadAsStringAsync();
             log?.AppendLine($"  Token exchange HTTP {(int)resp.StatusCode}: {json}");
-            if (!resp.IsSuccessStatusCode) return null;
+            if (!resp.IsSuccessStatusCode) return (null, null);
             using var doc = JsonDocument.Parse(json);
-            return doc.RootElement.GetProperty("access_token").GetString();
+            var access  = doc.RootElement.GetProperty("access_token").GetString();
+            doc.RootElement.TryGetProperty("refresh_token", out var rt);
+            return (access, rt.ValueKind == JsonValueKind.String ? rt.GetString() : null);
         }
-        catch (Exception ex) { log?.AppendLine($"  Token exchange EXCEPTION: {ex.Message}"); return null; }
+        catch (Exception ex) { log?.AppendLine($"  Token exchange EXCEPTION: {ex.Message}"); return (null, null); }
+    }
+
+    private async Task<(string? accessToken, string? refreshToken)> TryRefreshTokenAsync(string refreshToken, string clientSecret, StringBuilder? log = null)
+    {
+        try
+        {
+            using var http = new HttpClient();
+            var body = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string,string>("client_id",     _clientId),
+                new KeyValuePair<string,string>("client_secret", clientSecret),
+                new KeyValuePair<string,string>("grant_type",    "refresh_token"),
+                new KeyValuePair<string,string>("refresh_token", refreshToken),
+            });
+            var resp = await http.PostAsync("https://discord.com/api/v10/oauth2/token", body);
+            var json = await resp.Content.ReadAsStringAsync();
+            log?.AppendLine($"  Refresh token HTTP {(int)resp.StatusCode}: {json}");
+            if (!resp.IsSuccessStatusCode) return (null, null);
+            using var doc = JsonDocument.Parse(json);
+            var access = doc.RootElement.GetProperty("access_token").GetString();
+            doc.RootElement.TryGetProperty("refresh_token", out var rt);
+            return (access, rt.ValueKind == JsonValueKind.String ? rt.GetString() : null);
+        }
+        catch (Exception ex) { log?.AppendLine($"  Refresh token EXCEPTION: {ex.Message}"); return (null, null); }
     }
 
     private static string? LoadClientSecret()

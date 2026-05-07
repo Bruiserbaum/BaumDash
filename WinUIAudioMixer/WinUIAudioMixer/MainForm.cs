@@ -730,6 +730,11 @@ public sealed class MainForm : Form
         try
         {
             using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKey, writable: true)!;
+            // Only write on first run or when the registered path no longer exists.
+            // This prevents a debug build from overwriting a published build's registry entry.
+            if (key.GetValue("BaumDash") is string existing &&
+                File.Exists(existing.Trim('"')))
+                return;
             key.SetValue("BaumDash", $"\"{Application.ExecutablePath}\"");
         }
         catch { }

@@ -1,6 +1,6 @@
 #define AppName      "BaumDash"
-#define AppVersion   "2.8.15"
-#define AppVersionFull "2.8.15"
+#define AppVersion   "2.8.16"
+#define AppVersionFull "2.8.16"
 #define AppPublisher "Bnuss"
 #define AppExeName   "WinUIAudioMixer.exe"
 #define PublishDir   "..\WinUIAudioMixer\bin\Release\net8.0-windows10.0.22621.0\win-x64\publish"
@@ -80,5 +80,6 @@ Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait
 
 [UninstallDelete]
 Type: files; Name: "{app}\discord-debug.log"
-Type: files; Name: "{app}\discord-token.txt"
 Type: files; Name: "{app}\window-state.json"
+; discord-token.txt and discord-refresh-token.txt now live in %AppData%\BaumDash —
+; left in place on uninstall so reinstalls don't require re-authorization.
