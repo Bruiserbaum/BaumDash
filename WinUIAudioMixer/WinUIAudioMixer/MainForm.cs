@@ -124,7 +124,9 @@ public sealed class MainForm : Form
         FormClosing += OnFormClosing;
 
         // Log power state changes (sleep / wake) which are a known crash trigger
-        Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
+        Microsoft.Win32.SystemEvents.PowerModeChanged     += OnPowerModeChanged;
+        // Re-position window when monitors reconnect after sleep / dock change
+        Microsoft.Win32.SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
     }
 
     // ── Initialisation ────────────────────────────────────────────────────────
@@ -520,6 +522,33 @@ public sealed class MainForm : Form
             {
                 Services.CrashLogger.Error("Exception refreshing audio after sleep resume", ex);
             }
+            // Give monitors time to re-enumerate, then fix window position
+            Task.Delay(3000).ContinueWith(_ =>
+            {
+                if (IsHandleCreated && !IsDisposed)
+                    BeginInvoke(EnsureOnScreen);
+            });
+        }
+    }
+
+    private void OnDisplaySettingsChanged(object? sender, EventArgs e)
+    {
+        // Monitor added/removed (sleep, dock/undock) — re-check position after OS settles
+        Task.Delay(2000).ContinueWith(_ =>
+        {
+            if (IsHandleCreated && !IsDisposed)
+                BeginInvoke(EnsureOnScreen);
+        });
+    }
+
+    private void EnsureOnScreen()
+    {
+        if (WindowState == FormWindowState.Minimized || !Visible) return;
+        var b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+        if (!Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(b)))
+        {
+            var work = Screen.PrimaryScreen!.WorkingArea;
+            Location = new Point(work.X, work.Y);
         }
     }
 
@@ -730,12 +759,12 @@ public sealed class MainForm : Form
         try
         {
             using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKey, writable: true)!;
-            // Only write on first run or when the registered path no longer exists.
-            // This prevents a debug build from overwriting a published build's registry entry.
-            if (key.GetValue("BaumDash") is string existing &&
-                File.Exists(existing.Trim('"')))
+            // Start in tray on boot so the window doesn't pop up before the desktop is ready.
+            // Always sync the value — this updates stale entries that lack --tray.
+            var desired = $"\"{Application.ExecutablePath}\" --tray";
+            if (key.GetValue("BaumDash") is string existing && existing == desired)
                 return;
-            key.SetValue("BaumDash", $"\"{Application.ExecutablePath}\"");
+            key.SetValue("BaumDash", desired);
         }
         catch { }
     }
@@ -938,7 +967,8 @@ public sealed class MainForm : Form
     {
         if (disposing)
         {
-            Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+            Microsoft.Win32.SystemEvents.PowerModeChanged      -= OnPowerModeChanged;
+            Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
             _audioNotifySvc.Dispose();
             _discordSvc    .Dispose();
             _haSvc         ?.Dispose();

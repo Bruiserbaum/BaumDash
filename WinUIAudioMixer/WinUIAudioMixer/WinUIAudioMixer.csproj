@@ -10,7 +10,7 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <AssemblyTitle>BaumDash</AssemblyTitle>
     <Product>BaumDash</Product>
-    <Version>2.8.16</Version>
+    <Version>2.8.17</Version>
   </PropertyGroup>
 
   <ItemGroup>
