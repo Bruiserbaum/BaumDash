@@ -72,6 +72,12 @@ public sealed class MediaSessionService : IDisposable
 
     public async Task RefreshAsync()
     {
+        // Re-attach if we lost the session — CurrentSessionChanged events can be
+        // missed (e.g. across sleep/resume), leaving _currentSession stale-null
+        // while a player is actually active.
+        if (_currentSession == null && _manager != null)
+            AttachSession(_manager.GetCurrentSession());
+
         if (_currentSession == null)
         {
             MediaChanged?.Invoke(new MediaInfo());

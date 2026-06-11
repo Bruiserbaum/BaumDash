@@ -40,11 +40,19 @@ public sealed class MainForm : Form
     private bool    _dragging;
     private Button? _btnMax;
     private Button? _btnSettings, _btnHelp, _btnUpdate; // overlay buttons — brought to front in OnLoad
-    private NotifyIcon? _trayIcon;
     private bool _exitRequested;
-    private bool _closeToTray = true;
 
-    /// <summary>Set by SettingsDialog.OnImport — Program.cs restarts to tray after Application.Run returns.</summary>
+    // Saved window placement — kept so we can re-apply it when the target
+    // monitor (small touchscreen) enumerates late after boot or sleep.
+    private Rectangle _savedBounds = Rectangle.Empty;
+    private bool _savedMaximized;
+    private bool _placementRestorePending;
+
+    // Media (SMTC) watchdog — retries bootstrap and re-syncs stale sessions
+    private System.Windows.Forms.Timer? _mediaWatchdog;
+    private bool _mediaSvcCreating;
+
+    /// <summary>Set by SettingsDialog.OnImport — Program.cs restarts the app after Application.Run returns.</summary>
     internal static bool PendingImportRestart;
 
     private static readonly string _windowStatePath =
@@ -96,7 +104,6 @@ public sealed class MainForm : Form
                     new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (cfg != null)
                 {
-                    _closeToTray   = cfg.CloseToTray;
                     _layoutProfile = cfg.LayoutProfile ?? "auto";
                     _statusUrl     = cfg.StatusUrl ?? "";
                     Services.UpdateService.Channel = cfg.ReleaseChannel ?? "stable";
@@ -172,18 +179,10 @@ public sealed class MainForm : Form
 
         // Close / Maximise / Minimise buttons (far right)
         var btnClose = MakeTitleBarButton("✕", AppTheme.Danger);
-        btnClose.Click += (_, _) =>
-        {
-            if (_closeToTray) HideToTray();
-            else { _exitRequested = true; Close(); }
-        };
+        btnClose.Click += (_, _) => Close(); // confirmation handled in OnFormClosing
 
         var btnMin = MakeTitleBarButton("─", AppTheme.TextMuted);
-        btnMin.Click += (_, _) =>
-        {
-            if (_closeToTray) HideToTray();
-            else WindowState = FormWindowState.Minimized;
-        };
+        btnMin.Click += (_, _) => WindowState = FormWindowState.Minimized;
 
         _btnMax = MakeTitleBarButton("⬜", AppTheme.TextMuted);
         _btnMax.Click += (_, _) => ToggleMaximize();
@@ -257,54 +256,88 @@ public sealed class MainForm : Form
         btnUpdate.Click   += OnUpdateButtonClick;
         Controls.Add(btnUpdate);
         _btnUpdate = btnUpdate;
-
-        InitTrayIcon();
     }
 
-    private void InitTrayIcon()
-    {
-        // Build a simple 16x16 icon programmatically (dark bg, white "B")
-        var bmp = new Bitmap(16, 16);
-        using (var g = Graphics.FromImage(bmp))
-        {
-            g.Clear(AppTheme.BgDeep);
-            using var br = new SolidBrush(AppTheme.Accent);
-            g.FillRectangle(br, 0, 0, 16, 16);
-            using var f  = new Font("Segoe UI", 8f, FontStyle.Bold);
-            using var tb = new SolidBrush(Color.White);
-            var fmt = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-            g.DrawString("B", f, tb, new RectangleF(0, 0, 16, 16), fmt);
-        }
-        var icon = Icon.FromHandle(bmp.GetHicon());
-
-        var menu = new ContextMenuStrip();
-        menu.Items.Add("Show", null, (_, _) => RestoreFromTray());
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("Exit", null, (_, _) => { _exitRequested = true; Application.Exit(); });
-
-        _trayIcon = new NotifyIcon
-        {
-            Icon    = icon,
-            Text    = "BaumDash",
-            Visible = false,
-            ContextMenuStrip = menu,
-        };
-        _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
-    }
-
-    private void HideToTray()
-    {
-        SaveWindowState();
-        Hide();
-        if (_trayIcon != null) _trayIcon.Visible = true;
-    }
-
-    private void RestoreFromTray()
+    /// <summary>
+    /// Called (via BeginInvoke) when a second launch attempt signals the
+    /// running instance — bring the window back instead of doing nothing.
+    /// </summary>
+    public void ActivateFromSecondInstance()
     {
         Show();
-        WindowState = FormWindowState.Normal;
+        if (WindowState == FormWindowState.Minimized)
+            WindowState = _savedMaximized ? FormWindowState.Maximized : FormWindowState.Normal;
         Activate();
-        if (_trayIcon != null) _trayIcon.Visible = false;
+        // Nudge past the foreground-lock so it actually surfaces over a game
+        TopMost = true;
+        TopMost = false;
+    }
+
+    /// <summary>
+    /// Large touch-friendly "are you sure?" dialog — easy to hit on the small
+    /// touchscreen, hard to trigger accidentally mid-game.
+    /// </summary>
+    private bool ConfirmClose()
+    {
+        using var dlg = new Form
+        {
+            Text            = "Close BaumDash",
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            BackColor       = AppTheme.BgDeep,
+            ForeColor       = AppTheme.TextPrimary,
+            ClientSize      = new Size(440, 200),
+            StartPosition   = FormStartPosition.CenterParent,
+            MaximizeBox     = false,
+            MinimizeBox     = false,
+            ShowInTaskbar   = false,
+        };
+
+        var lbl = new Label
+        {
+            Text      = "Are you sure you want to close BaumDash?",
+            Font      = new Font("Segoe UI", 13f, FontStyle.Bold),
+            ForeColor = AppTheme.TextPrimary,
+            BackColor = Color.Transparent,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Location  = new Point(16, 18),
+            Size      = new Size(408, 64),
+        };
+
+        var btnYes = new Button
+        {
+            Text         = "CLOSE",
+            Font         = new Font("Segoe UI", 14f, FontStyle.Bold),
+            ForeColor    = Color.White,
+            BackColor    = AppTheme.Danger,
+            FlatStyle    = FlatStyle.Flat,
+            Size         = new Size(190, 84),
+            Location     = new Point(20, 96),
+            Cursor       = Cursors.Hand,
+            DialogResult = DialogResult.Yes,
+            FlatAppearance = { BorderSize = 0,
+                MouseOverBackColor = ControlPaint.Dark(AppTheme.Danger, 0.12f) },
+        };
+
+        var btnNo = new Button
+        {
+            Text         = "CANCEL",
+            Font         = new Font("Segoe UI", 14f, FontStyle.Bold),
+            ForeColor    = AppTheme.TextPrimary,
+            BackColor    = AppTheme.BgCard,
+            FlatStyle    = FlatStyle.Flat,
+            Size         = new Size(190, 84),
+            Location     = new Point(230, 96),
+            Cursor       = Cursors.Hand,
+            DialogResult = DialogResult.No,
+            FlatAppearance = { BorderSize = 1, BorderColor = AppTheme.Border,
+                MouseOverBackColor = AppTheme.BgPanel },
+        };
+
+        dlg.Controls.AddRange(new Control[] { lbl, btnYes, btnNo });
+        dlg.AcceptButton = btnNo;  // Enter = safe default
+        dlg.CancelButton = btnNo;
+
+        return dlg.ShowDialog(this) == DialogResult.Yes;
     }
 
     // ── Layout profiles ───────────────────────────────────────────────────────
@@ -396,13 +429,6 @@ public sealed class MainForm : Form
         // Register auto-start by default if not already set
         EnsureAutoStart();
 
-        // If launched with --tray (e.g. after settings import), go straight to tray
-        if (Environment.GetCommandLineArgs().Contains("--tray"))
-        {
-            HideToTray();
-            return;
-        }
-
         // Apply dark title bar via DWM
         ApplyDarkMode();
 
@@ -424,18 +450,39 @@ public sealed class MainForm : Form
                 BeginInvoke(() => ShowUpdateButton(release));
         });
 
-        // Bootstrap SMTC media service
+        // Bootstrap SMTC media service, then keep it healthy with a watchdog:
+        // retries creation if SMTC wasn't ready at startup and re-syncs the
+        // session periodically in case change notifications were missed.
+        await InitMediaServiceAsync();
+        _mediaWatchdog = new System.Windows.Forms.Timer { Interval = 5000 };
+        _mediaWatchdog.Tick += async (_, _) =>
+        {
+            if (_mediaSvc == null) await InitMediaServiceAsync();
+            else { try { await _mediaSvc.RefreshAsync(); } catch { } }
+        };
+        _mediaWatchdog.Start();
+    }
+
+    private async Task InitMediaServiceAsync()
+    {
+        if (_mediaSvc != null || _mediaSvcCreating) return;
+        _mediaSvcCreating = true;
         try
         {
-            _mediaSvc = await MediaSessionService.CreateAsync();
-            _mediaSvc.MediaChanged += info =>
+            var svc = await MediaSessionService.CreateAsync();
+            svc.MediaChanged += info =>
             {
                 if (InvokeRequired) BeginInvoke(() => _mediaPanel?.UpdateMedia(info));
                 else                _mediaPanel?.UpdateMedia(info);
             };
-            await _mediaSvc.RefreshAsync();
+            _mediaSvc = svc;
+            await svc.RefreshAsync();
         }
-        catch { /* SMTC unavailable */ }
+        catch (Exception ex)
+        {
+            Services.CrashLogger.Error("SMTC media service init failed — will retry", ex);
+        }
+        finally { _mediaSvcCreating = false; }
     }
 
     // ── Audio changed callback ────────────────────────────────────────────────
@@ -464,7 +511,6 @@ public sealed class MainForm : Form
                     new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (cfg != null)
                 {
-                    _closeToTray = cfg.CloseToTray;
                     _devicePanel?.ApplyGpuPlatform(cfg.GpuPlatform);
                     ApplyLayout(cfg.LayoutProfile ?? "auto");
                     _discordPanel?.ApplyTabVisibility(cfg.HiddenDiscordTabs ?? new List<string>());
@@ -544,6 +590,24 @@ public sealed class MainForm : Form
     private void EnsureOnScreen()
     {
         if (WindowState == FormWindowState.Minimized || !Visible) return;
+
+        // If the saved position couldn't be applied at startup (touchscreen not
+        // enumerated yet), apply it now that its monitor is available.
+        if (_placementRestorePending && _savedBounds != Rectangle.Empty &&
+            Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(_savedBounds)))
+        {
+            _placementRestorePending = false;
+            WindowState = FormWindowState.Normal;
+            Bounds      = _savedBounds;
+            if (_savedMaximized)
+            {
+                WindowState = FormWindowState.Maximized;
+                if (_btnMax != null) _btnMax.Text = "❐";
+            }
+            Services.CrashLogger.Info($"Deferred window placement applied: {_savedBounds}");
+            return;
+        }
+
         var b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
         if (!Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(b)))
         {
@@ -558,11 +622,6 @@ public sealed class MainForm : Form
         _btnUpdate.Text    = $"⬆ v{release.Version}";
         _btnUpdate.Visible = true;
         _btnUpdate.BringToFront();
-
-        // Also show a tray balloon if running in the tray
-        if (_trayIcon?.Visible == true)
-            _trayIcon.ShowBalloonTip(6000, "BaumDash Update Available",
-                $"Version {release.Version} is ready to download.", ToolTipIcon.Info);
     }
 
     private void OnUpdateButtonClick(object? sender, EventArgs e)
@@ -628,7 +687,7 @@ public sealed class MainForm : Form
         {
             try
             {
-                _exitRequested = true; // prevent close-to-tray interception during update exit
+                _exitRequested = true; // skip the close-confirmation prompt during update exit
                 await Services.UpdateService.DownloadAndInstallAsync(release, progress, cts.Token);
             }
             catch (OperationCanceledException) { dlg.Close(); }
@@ -668,17 +727,26 @@ public sealed class MainForm : Form
                 r.GetProperty("X").GetInt32(), r.GetProperty("Y").GetInt32(),
                 r.GetProperty("W").GetInt32(), r.GetProperty("H").GetInt32());
 
+            _savedBounds    = b;
+            _savedMaximized = r.GetProperty("Maximized").GetBoolean();
+
             // Only restore if the rect is actually visible on some screen
             if (Screen.AllScreens.Any(s => s.WorkingArea.IntersectsWith(b)))
             {
                 Bounds = b;
-                if (r.GetProperty("Maximized").GetBoolean())
+                if (_savedMaximized)
                 {
                     WindowState = FormWindowState.Maximized;
                     if (_btnMax != null) _btnMax.Text = "❐";
                 }
                 return;
             }
+
+            // Target monitor isn't available yet (e.g. touchscreen enumerates late
+            // at boot) — start on the fallback screen and re-apply the saved
+            // placement from EnsureOnScreen once the display appears.
+            _placementRestorePending = true;
+            Services.CrashLogger.Info($"Saved window placement {b} off-screen — deferred until its monitor appears");
         }
         catch { }
         Bounds = fallback;
@@ -687,22 +755,17 @@ public sealed class MainForm : Form
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
         SaveWindowState();
-        // Allow exit when explicitly requested (tray Exit item), triggered by Application.Exit(), or after import restart
-        if (!_exitRequested && e.CloseReason != CloseReason.ApplicationExitCall && !PendingImportRestart)
+
+        // Confirm user-initiated closes (✕ button, Alt+F4). Skip the prompt for
+        // Windows shutdown, Application.Exit (update flow), or import restart.
+        if (!_exitRequested && !PendingImportRestart &&
+            e.CloseReason == CloseReason.UserClosing && !ConfirmClose())
         {
-            Services.CrashLogger.Info($"Close intercepted (reason={e.CloseReason}) — hiding to tray");
             e.Cancel = true;
-            HideToTray();
+            return;
         }
-        else
-        {
-            Services.CrashLogger.Info($"Application exiting (reason={e.CloseReason}, exitRequested={_exitRequested})");
-            if (_trayIcon != null)
-            {
-                _trayIcon.Visible = false;
-                _trayIcon.Dispose();
-            }
-        }
+
+        Services.CrashLogger.Info($"Application exiting (reason={e.CloseReason}, exitRequested={_exitRequested})");
     }
 
     private void SaveWindowState()
@@ -759,9 +822,9 @@ public sealed class MainForm : Form
         try
         {
             using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(runKey, writable: true)!;
-            // Start in tray on boot so the window doesn't pop up before the desktop is ready.
-            // Always sync the value — this updates stale entries that lack --tray.
-            var desired = $"\"{Application.ExecutablePath}\" --tray";
+            // Always sync the value — fixes stale entries (old install path or
+            // the legacy --tray flag, which made startup launches invisible).
+            var desired = $"\"{Application.ExecutablePath}\"";
             if (key.GetValue("BaumDash") is string existing && existing == desired)
                 return;
             key.SetValue("BaumDash", desired);
@@ -823,9 +886,9 @@ public sealed class MainForm : Form
             "GENERAL SETTINGS\r\n" +
             "─────────────────────────────────────────────────\r\n" +
             "• Launch on startup — adds BaumDash to Windows startup.\r\n" +
-            "• Close / minimize to tray — when enabled, the ✕ and ─ buttons\r\n" +
-            "  hide BaumDash to the system tray instead of exiting.\r\n" +
-            "  Right-click the tray icon to exit completely.\r\n" +
+            "  The window reopens at its last position and size.\r\n" +
+            "• The ✕ button closes BaumDash completely after a\r\n" +
+            "  confirmation prompt. The ─ button minimizes to the taskbar.\r\n" +
             "\r\n" +
             "DISCORD SETUP\r\n" +
             "─────────────────────────────────────────────────\r\n" +
@@ -969,6 +1032,8 @@ public sealed class MainForm : Form
         {
             Microsoft.Win32.SystemEvents.PowerModeChanged      -= OnPowerModeChanged;
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            _mediaWatchdog?.Stop();
+            _mediaWatchdog?.Dispose();
             _audioNotifySvc.Dispose();
             _discordSvc    .Dispose();
             _haSvc         ?.Dispose();

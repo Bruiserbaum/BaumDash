@@ -5,9 +5,16 @@ static class Program
     [STAThread]
     static void Main()
     {
-        // Enforce single instance — silently exit if already running
+        // Enforce single instance — if already running, wake the existing
+        // window instead of silently exiting (looks like a failed launch).
         using var mutex = new System.Threading.Mutex(true, @"Global\BaumDash-SingleInstance", out bool isNewInstance);
-        if (!isNewInstance) return;
+        using var showSignal = new System.Threading.EventWaitHandle(
+            false, System.Threading.EventResetMode.AutoReset, @"Local\BaumDash-ShowWindow");
+        if (!isNewInstance)
+        {
+            showSignal.Set();
+            return;
+        }
 
         Application.EnableVisualStyles();
         Application.SetCompatibleTextRenderingDefault(false);
@@ -32,7 +39,20 @@ static class Program
             if (e.IsTerminating) RestartAfterCrash();
         };
 
-        Application.Run(new MainForm());
+        var form = new MainForm();
+
+        // Listen for "show yourself" signals from later launch attempts
+        var showListener = new System.Threading.Thread(() =>
+        {
+            while (showSignal.WaitOne())
+            {
+                try { form.BeginInvoke(form.ActivateFromSecondInstance); }
+                catch { /* form not ready or disposed */ }
+            }
+        }) { IsBackground = true };
+        showListener.Start();
+
+        Application.Run(form);
 
         // If settings were imported, release the mutex before starting the new instance
         // so it can acquire the single-instance lock successfully.

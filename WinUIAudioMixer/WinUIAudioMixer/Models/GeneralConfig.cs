@@ -2,7 +2,6 @@ namespace WinUIAudioMixer.Models;
 
 public sealed class GeneralConfig
 {
-    public bool   CloseToTray     { get; set; } = true;
     /// <summary>dark / light / custom</summary>
     public string Theme           { get; set; } = "dark";
     /// <summary>Hex accent colour for the "custom" theme, e.g. #4A90E2</summary>

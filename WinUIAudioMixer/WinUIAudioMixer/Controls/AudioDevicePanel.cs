@@ -424,6 +424,22 @@ public sealed class AudioDevicePanel : UserControl
         _timerUpdating = true;
         try
         {
+            // Poll the default devices as a fallback — COM change notifications
+            // can be lost after sleep/lock, leaving the labels stuck on an old
+            // device. If the system default no longer matches what we show,
+            // reload the device list.
+            var defaultOutId = _deviceService.GetDefaultDeviceId(EDataFlow.Render, ERole.Multimedia);
+            var shownOutId   = _currentDeviceIndex < _outputDevices.Count
+                             ? _outputDevices[_currentDeviceIndex].Id : null;
+            if (defaultOutId != null && defaultOutId != shownOutId)
+                LoadDevices();
+
+            var defaultMicId = _deviceService.GetDefaultDeviceId(EDataFlow.Capture, ERole.Communications);
+            var shownMicId   = _currentMicIndex < _micDevices.Count
+                             ? _micDevices[_currentMicIndex].Id : null;
+            if (defaultMicId != null && defaultMicId != shownMicId)
+                LoadMic();
+
             if (_speakerEpVol != null)
             {
                 _speakerEpVol.GetMasterVolumeLevelScalar(out var vol);

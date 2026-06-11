@@ -180,6 +180,30 @@ public sealed class AudioDeviceService
         return devices.OrderByDescending(d => d.IsDefault).ThenBy(d => d.Name).ToList();
     }
 
+    /// <summary>
+    /// Cheap lookup of the current default device ID — used by the UI as a
+    /// polling fallback when COM change notifications are lost (sleep/lock).
+    /// </summary>
+    public string? GetDefaultDeviceId(EDataFlow flow, ERole role)
+    {
+        IMMDeviceEnumerator? enumerator = null;
+        IMMDevice? device = null;
+        try
+        {
+            enumerator = (IMMDeviceEnumerator)new MMDeviceEnumerator();
+            enumerator.GetDefaultAudioEndpoint(flow, role, out device);
+            string? id = null;
+            device?.GetId(out id);
+            return id;
+        }
+        catch { return null; }
+        finally
+        {
+            MarshalHelpers.ReleaseComObject(device);
+            MarshalHelpers.ReleaseComObject(enumerator);
+        }
+    }
+
     public void SetDefaultDevice(string deviceId)
     {
         var policyConfig = (IPolicyConfig)new PolicyConfigClient();

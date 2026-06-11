@@ -25,7 +25,6 @@ public sealed class SettingsDialog : Form
 
     private readonly Label _statusLabel;
     private readonly CheckBox _chkAutoStart;
-    private readonly CheckBox _chkCloseToTray;
 
     // GPU platform
     private RadioButton? _rbGpuAmd, _rbGpuNvidia;
@@ -251,7 +250,7 @@ public sealed class SettingsDialog : Form
         }
 
         // ── Build tab content ─────────────────────────────────────────────────
-        (_chkAutoStart, _chkCloseToTray) = BuildGeneralPanel(_tabPanels[0]);
+        _chkAutoStart = BuildGeneralPanel(_tabPanels[0]);
         (_weatherLat, _weatherLon, _weatherUnit) = BuildWeatherPanel(_tabPanels[1]);
         (_discordClientId, _discordClientSecret) = BuildDiscordPanel(_tabPanels[2]);
         AddDiscordAuthSection(_tabPanels[2]);
@@ -782,7 +781,7 @@ public sealed class SettingsDialog : Form
         _calScrollView?.SetContentHeight(_calEntries.Count * 62);
     }
 
-    private (CheckBox autoStart, CheckBox closeToTray) BuildGeneralPanel(Panel p)
+    private CheckBox BuildGeneralPanel(Panel p)
     {
         var sv     = new WideScrollPanel(DlgW, 560);
         p.Controls.Add(sv);
@@ -920,23 +919,6 @@ public sealed class SettingsDialog : Form
         scroll.Controls.Add(chkAutoStart);
         y += chkAutoStart.PreferredSize.Height + 4;
         AddHint(scroll, "Adds BaumDash to HKCU\\...\\Run so it starts automatically on login.", ref y, 22);
-
-        // ── Window Behaviour ──────────────────────────────────────────────────
-        AddSectionLabel(scroll, "WINDOW BEHAVIOUR", ref y);
-
-        var chkCloseToTray = new CheckBox
-        {
-            Text      = "Minimize and close to system tray instead of exiting",
-            Font      = AppTheme.FontLabel,
-            ForeColor = AppTheme.TextPrimary,
-            BackColor = Color.Transparent,
-            AutoSize  = true,
-            Cursor    = Cursors.Hand,
-            Location  = new Point(FieldX, y),
-        };
-        scroll.Controls.Add(chkCloseToTray);
-        y += chkCloseToTray.PreferredSize.Height + 4;
-        AddHint(scroll, "When off, the ✕ button exits BaumDash completely.", ref y, 22);
 
         // ── GPU Platform ──────────────────────────────────────────────────────
         // Each radio group MUST be in its own container Panel so WinForms
@@ -1235,7 +1217,7 @@ public sealed class SettingsDialog : Form
 
         sv.SetContentHeight(y + 20);
 
-        return (chkAutoStart, chkCloseToTray);
+        return chkAutoStart;
     }
 
     private RadioButton MakeRadioButton(string text, Panel parent, int x, int y)
@@ -1441,8 +1423,6 @@ public sealed class SettingsDialog : Form
                     new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (cfg != null)
                 {
-                    _chkCloseToTray.Checked = cfg.CloseToTray;
-
                     if (cfg.Theme.Equals("light", StringComparison.OrdinalIgnoreCase))
                     {
                         if (_rbLight != null) _rbLight.Checked = true;
@@ -1510,12 +1490,8 @@ public sealed class SettingsDialog : Form
                         _statusUrlBox.Text = cfg.StatusUrl ?? "";
                 }
             }
-            else
-            {
-                _chkCloseToTray.Checked = true;
-            }
         }
-        catch { _chkCloseToTray.Checked = true; }
+        catch { }
 
         _chkAutoStart.Checked = IsAutoStartEnabled();
     }
@@ -1616,7 +1592,6 @@ public sealed class SettingsDialog : Form
             File.WriteAllText(Path.Combine(dir, "general-config.json"),
                 JsonSerializer.Serialize(new WinUIAudioMixer.Models.GeneralConfig
                 {
-                    CloseToTray       = _chkCloseToTray.Checked,
                     Theme             = theme,
                     CustomAccentHex   = accentHx,
                     BgImagePath       = bgPath,
