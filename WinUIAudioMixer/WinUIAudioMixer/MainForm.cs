@@ -52,6 +52,10 @@ public sealed class MainForm : Form
     private System.Windows.Forms.Timer? _mediaWatchdog;
     private bool _mediaSvcCreating;
 
+    // Audio change debounce — coalesces the burst of COM notifications that
+    // Windows fires when switching devices so we only reload once things settle.
+    private System.Windows.Forms.Timer? _audioChangeDebounce;
+
     /// <summary>Set by SettingsDialog.OnImport — Program.cs restarts the app after Application.Run returns.</summary>
     internal static bool PendingImportRestart;
     /// <summary>Set by Program.cs ThreadException handler — restarts after Application.Run returns so the mutex is released first.</summary>
@@ -542,6 +546,25 @@ public sealed class MainForm : Form
         // Application.Run), so callbacks can arrive on a ThreadPool MTA thread.
         // COM audio objects are STA-bound — always marshal to the UI thread.
         if (InvokeRequired) { BeginInvoke(OnAudioChanged); return; }
+
+        // Debounce: switching a device fires a burst of COM notifications
+        // (OnDefaultDeviceChanged + OnDeviceStateChanged × 2 + OnSessionCreated …).
+        // Reacting to each one individually causes rapid-fire LoadSessions() calls
+        // that can hit the COM audio stack while it is mid-transition, resulting in
+        // an AccessViolationException.  Restart the timer on every notification so
+        // the actual reload only happens once the storm settles (~400 ms of quiet).
+        if (_audioChangeDebounce == null)
+        {
+            _audioChangeDebounce = new System.Windows.Forms.Timer { Interval = 400 };
+            _audioChangeDebounce.Tick += OnAudioChangedDebounced;
+        }
+        _audioChangeDebounce.Stop();
+        _audioChangeDebounce.Start();
+    }
+
+    private void OnAudioChangedDebounced(object? sender, EventArgs e)
+    {
+        _audioChangeDebounce?.Stop();
         Services.CrashLogger.Info("Audio device/session change — reloading panels");
         try
         {
@@ -1032,6 +1055,8 @@ public sealed class MainForm : Form
         {
             Microsoft.Win32.SystemEvents.PowerModeChanged      -= OnPowerModeChanged;
             Microsoft.Win32.SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+            _audioChangeDebounce?.Stop();
+            _audioChangeDebounce?.Dispose();
             _mediaWatchdog?.Stop();
             _mediaWatchdog?.Dispose();
             _audioNotifySvc.Dispose();
