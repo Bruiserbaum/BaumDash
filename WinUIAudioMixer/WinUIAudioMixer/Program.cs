@@ -27,7 +27,11 @@ static class Program
         Application.ThreadException += (_, e) =>
         {
             Services.CrashLogger.Fatal("Unhandled UI-thread exception — restarting", e.Exception);
-            RestartAfterCrash();
+            // Set flag so Main() starts the new instance AFTER Application.Run() returns
+            // and the using block releases the mutex — avoids a race where the new process
+            // sees the mutex still held and exits as a "second instance".
+            MainForm.PendingCrashRestart = true;
+            Application.Exit();
         };
 
         // Catch non-UI-thread exceptions that would otherwise terminate the process
@@ -36,7 +40,13 @@ static class Program
             var ex = e.ExceptionObject as Exception;
             Services.CrashLogger.Fatal(
                 $"Unhandled non-UI exception (terminating={e.IsTerminating})", ex);
-            if (e.IsTerminating) RestartAfterCrash();
+            if (e.IsTerminating)
+            {
+                // Process is terminating immediately — release the mutex now so the
+                // new instance can acquire it, then start it before we disappear.
+                try { mutex.ReleaseMutex(); } catch { }
+                try { System.Diagnostics.Process.Start(Application.ExecutablePath); } catch { }
+            }
         };
 
         var form = new MainForm();
@@ -54,18 +64,12 @@ static class Program
 
         Application.Run(form);
 
-        // If settings were imported, release the mutex before starting the new instance
-        // so it can acquire the single-instance lock successfully.
-        if (MainForm.PendingImportRestart)
+        // Release the mutex before starting the new instance so it can acquire
+        // the single-instance lock. Covers both import restarts and crash restarts.
+        if (MainForm.PendingImportRestart || MainForm.PendingCrashRestart)
         {
             try { mutex.ReleaseMutex(); } catch { }
             try { System.Diagnostics.Process.Start(Application.ExecutablePath); } catch { }
         }
-    }
-
-    private static void RestartAfterCrash()
-    {
-        try { System.Diagnostics.Process.Start(Application.ExecutablePath); } catch { }
-        Application.Exit();
     }
 }

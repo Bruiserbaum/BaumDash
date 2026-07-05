@@ -76,7 +76,11 @@ public sealed class AudioNotificationService : IMMNotificationClient, IAudioSess
         }
     }
 
-    private void NotifyChanged() => _syncCtx.Post(_ => _onChange(), null);
+    private void NotifyChanged() => _syncCtx.Post(_ =>
+    {
+        try { _onChange(); }
+        catch (Exception ex) { CrashLogger.Error("Audio change notification failed", ex); }
+    }, null);
 
     // IMMNotificationClient
     public int OnDefaultDeviceChanged(EDataFlow flow, ERole role, string defaultDeviceId)

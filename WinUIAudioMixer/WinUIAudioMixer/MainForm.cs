@@ -54,6 +54,8 @@ public sealed class MainForm : Form
 
     /// <summary>Set by SettingsDialog.OnImport — Program.cs restarts the app after Application.Run returns.</summary>
     internal static bool PendingImportRestart;
+    /// <summary>Set by Program.cs ThreadException handler — restarts after Application.Run returns so the mutex is released first.</summary>
+    internal static bool PendingCrashRestart;
 
     private static readonly string _windowStatePath =
         Path.Combine(AppContext.BaseDirectory, "window-state.json");
@@ -557,17 +559,15 @@ public sealed class MainForm : Form
         Services.CrashLogger.Info($"Power mode changed: {e.Mode}");
         if (e.Mode == Microsoft.Win32.PowerModes.Resume)
         {
-            // Wake from sleep — re-enumerate audio devices which are a common crash point
-            Services.CrashLogger.Info("System resumed from sleep — refreshing audio");
-            try
+            Services.CrashLogger.Info("System resumed from sleep — scheduling audio refresh");
+            // Delay the audio refresh: the Windows audio engine takes a couple of
+            // seconds to reinitialize after wake, and querying COM too early causes
+            // COMExceptions that can crash the app. 2 s gives it time to settle.
+            Task.Delay(2000).ContinueWith(_ =>
             {
-                if (InvokeRequired) BeginInvoke(() => OnAudioChanged());
-                else                OnAudioChanged();
-            }
-            catch (Exception ex)
-            {
-                Services.CrashLogger.Error("Exception refreshing audio after sleep resume", ex);
-            }
+                if (IsHandleCreated && !IsDisposed)
+                    BeginInvoke(OnAudioChanged);
+            });
             // Give monitors time to re-enumerate, then fix window position
             Task.Delay(3000).ContinueWith(_ =>
             {
